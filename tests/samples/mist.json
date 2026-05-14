@@ -1,0 +1,12 @@
+
+{
+  "event_type": "mist_event",
+  "state": "resolved",
+  "severity": "ok",
+  "device": "FABRIC-CORE-DFL",
+  "summary": "Sw Bgp Neighbor Up",
+  "details": "BGP peer 10.40.0.47 changed state from OpenConfirm to Established.",
+  "alert_id": "mist-5001",
+  "fired_at": "2026-05-14 12:40:39 PM",
+  "resolved_at": "2026-05-14 12:41:00 PM"
+}

@@ -1,0 +1,17 @@
+{
+  "state": 0,
+  "severity": "critical",
+  "hostname": "ross-dining-nutrislice",
+  "rule": "Devices up/down",
+  "elapsed": "15m 0s",
+  "timestamp": "2026-05-14 08:01:00 AM",
+  "resolved_at": "2026-05-14 08:16:01 AM",
+  "ip": "10.2.206.142",
+  "id": "nms-86361",
+  "link": "https://raccoon.middlebury.edu/alerts/86361",
+  "faults": [
+    {
+      "string": "Device returned to service after outage."
+    }
+  ]
+}

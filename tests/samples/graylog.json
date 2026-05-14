@@ -1,0 +1,12 @@
+
+{
+  "event_type": "graylog_event",
+  "state": "alert",
+  "severity": "critical",
+  "device": "FABRIC-CORE-DFL",
+  "summary": "Network Hardware Critical Extended",
+  "message": "fpc0 qsfp-0010 Chan 0 Rx power low alarm set",
+  "alert_id": "graylog-1001",
+  "fired_at": "2026-05-14T10:46:25-0400",
+  "link": "https://graylog.example/events/graylog-1001"
+}
