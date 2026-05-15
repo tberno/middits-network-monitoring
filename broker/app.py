@@ -1,11 +1,48 @@
 from flask import Flask, jsonify, request
+import os
+import requests
 
 from broker.models import NormalizedAlert
 from broker.formatters import format_slack_alert
 
 app = Flask(__name__)
 
+# -----------------------------
+# Slack config (from env)
+# -----------------------------
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 
+
+def send_to_slack(text: str):
+    """
+    Sends a message to Slack using chat.postMessage
+    """
+    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL_ID:
+        raise RuntimeError("Missing SLACK_BOT_TOKEN or SLACK_CHANNEL_ID")
+
+    resp = requests.post(
+        "https://slack.com/api/chat.postMessage",
+        headers={
+            "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "channel": SLACK_CHANNEL_ID,
+            "text": text,
+        },
+        timeout=10,
+    )
+
+    data = resp.json()
+
+    if not data.get("ok"):
+        raise RuntimeError(f"Slack API error: {data}")
+
+
+# -----------------------------
+# Normalizers
+# -----------------------------
 def normalize_graylog(payload: dict) -> NormalizedAlert:
     return NormalizedAlert(
         source="graylog",
@@ -73,6 +110,9 @@ def normalize_mist(payload: dict) -> NormalizedAlert:
     )
 
 
+# -----------------------------
+# Core renderer
+# -----------------------------
 def render_alert(source: str, payload: dict) -> str:
     normalizers = {
         "graylog": normalize_graylog,
@@ -83,6 +123,9 @@ def render_alert(source: str, payload: dict) -> str:
     return format_slack_alert(alert)
 
 
+# -----------------------------
+# Routes
+# -----------------------------
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"}), 200
@@ -92,6 +135,9 @@ def health():
 def webhook_graylog():
     payload = request.get_json(silent=True) or {}
     text = render_alert("graylog", payload)
+
+    send_to_slack(text)
+
     return jsonify({"ok": True, "source": "graylog", "text": text}), 200
 
 
@@ -99,6 +145,9 @@ def webhook_graylog():
 def webhook_nms():
     payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
     text = render_alert("nms", payload)
+
+    send_to_slack(text)
+
     return jsonify({"ok": True, "source": "nms", "text": text}), 200
 
 
@@ -106,6 +155,9 @@ def webhook_nms():
 def webhook_mist():
     payload = request.get_json(silent=True) or {}
     text = render_alert("mist", payload)
+
+    send_to_slack(text)
+
     return jsonify({"ok": True, "source": "mist", "text": text}), 200
 
 
