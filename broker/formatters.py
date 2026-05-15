@@ -7,7 +7,7 @@ def _line(label: str, value):
     return f"\n{label}: {value}" if value else ""
 
 
-def format_slack_alert(alert):
+def formatslackalert(alert):
     severity_key = (alert.severity or "").lower()
     state_key = (alert.state or "").lower()
 
