@@ -30,9 +30,9 @@ def slack_color_for_text(text: str) -> str:
 
 
 def slack_fallback_for_text(text: str) -> str:
-    # Keep this short so Slack does not visibly duplicate the full alert.
-    first_line = text.splitlines()[0].strip() if text else "Network alert"
-    return first_line or "Network alert"
+    # Top-level Slack text is only for notification previews/accessibility.
+    # Keep it generic so Slack does not visibly duplicate the attachment title.
+    return "Network alert"
 
 
 def send_to_slack(text: str):
