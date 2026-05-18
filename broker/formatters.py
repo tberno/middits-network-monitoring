@@ -28,6 +28,7 @@ def formatslackalert(alert):
         source=source_label,
         summary=alert.summary,
         device=alert.device,
+        details_block=details_block,
         severity=alert.severity.upper(),
         ip_line=_line("IP", alert.ip),
         rule_line=_line("Rule", alert.rule),
@@ -35,5 +36,5 @@ def formatslackalert(alert):
         resolved_line=_line("Resolved", alert.resolved_at),
         downtime_line=_line("Downtime", alert.downtime),
         link_line=_line("Link", alert.link),
-        details_block=details_block,
+        
     )
