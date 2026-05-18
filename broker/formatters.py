@@ -38,3 +38,5 @@ def formatslackalert(alert):
         link_line=_line("Link", alert.link),
         
     )
+# Backward-compatible name expected by broker/app.py
+format_slack_alert = formatslackalert
