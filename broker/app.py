@@ -81,7 +81,7 @@ def slack_color_for_text(text: str) -> str:
         return "#1f6feb"
 
     if "WARNING" in upper or "WARN" in upper:
-        return "warning"
+        return "#ff9900"
 
     return "#808080"
 
