@@ -74,17 +74,16 @@ def slack_color_for_text(text: str) -> str:
     if "RESOLVED" in upper:
         return "good"
 
-    if "CRITICAL" in upper or "DOWN" in upper:
-        return "danger"
+    if "WARNING" in upper or "WARN" in upper:
+        return "#ff9900"
 
     if "INFO" in upper or "INFORMATIONAL" in upper:
         return "#1f6feb"
 
-    if "WARNING" in upper or "WARN" in upper:
-        return "#ff9900"
+    if "CRITICAL" in upper or "DOWN" in upper:
+        return "danger"
 
     return "#808080"
-
 
 # -----------------------------------------------------------------------------
 # Slack notification / fallback text
