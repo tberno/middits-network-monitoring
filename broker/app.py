@@ -8,7 +8,13 @@ from broker.formatters import format_slack_alert
 app = Flask(__name__)
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+
+# Default/fallback channel.
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
+
+# Specific destinations.
+SLACK_NMS_CHANNEL_ID = os.getenv("SLACK_NMS_CHANNEL_ID") or SLACK_CHANNEL_ID
+SLACK_WIFI_CHANNEL_ID = os.getenv("SLACK_WIFI_CHANNEL_ID") or SLACK_CHANNEL_ID
 
 
 def slack_color_for_text(text: str) -> str:
@@ -35,9 +41,78 @@ def slack_fallback_for_text(text: str) -> str:
     return "Network alert"
 
 
-def send_to_slack(text: str):
-    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL_ID:
-        raise RuntimeError("Missing SLACK_BOT_TOKEN or SLACK_CHANNEL_ID")
+def _combined_payload_text(source: str, payload: dict, text: str) -> str:
+    payload_values = " ".join(
+        str(value).lower()
+        for value in payload.values()
+        if value is not None
+    )
+    return f"{source or ''} {text or ''} {payload_values}".lower()
+
+
+def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
+    """
+    Route alerts to the correct Slack channel.
+
+    Intended behavior:
+      - NMS/LibreNMS alerts go to the NMS/network alerts channel.
+      - Graylog alerts go to the NMS/network alerts channel.
+      - Mist AP/WiFi/client/wireless alerts go to the WiFi alerts channel.
+      - Mist switch/routing/interface alerts go to the NMS/network alerts channel.
+    """
+    source_key = (source or "").lower()
+    combined = _combined_payload_text(source_key, payload, text)
+
+    if source_key in ("nms", "graylog"):
+        return SLACK_NMS_CHANNEL_ID
+
+    if source_key == "mist":
+        wifi_terms = [
+            "wifi",
+            "wi-fi",
+            "wireless",
+            "wlan",
+            "ssid",
+            "access point",
+            "ap_down",
+            "ap disconnected",
+            "ap restarted",
+            "radio",
+            "radio_down",
+            "client",
+            "client disconnected",
+            "device restarted",
+        ]
+
+        switch_terms = [
+            "switch",
+            "switch_down",
+            "switch restarted",
+            "gateway",
+            "port",
+            "interface",
+            "bgp",
+            "ospf",
+            "lldp",
+            "stp",
+            "fabric-core",
+        ]
+
+        if any(term in combined for term in switch_terms):
+            return SLACK_NMS_CHANNEL_ID
+
+        if any(term in combined for term in wifi_terms):
+            return SLACK_WIFI_CHANNEL_ID
+
+        # Mist is primarily WiFi/AP unless the payload clearly looks like switch/network.
+        return SLACK_WIFI_CHANNEL_ID
+
+    return SLACK_CHANNEL_ID
+
+
+def send_to_slack(text: str, channel_id: str):
+    if not SLACK_BOT_TOKEN or not channel_id:
+        raise RuntimeError("Missing SLACK_BOT_TOKEN or Slack channel ID")
 
     color = slack_color_for_text(text)
     fallback = slack_fallback_for_text(text)
@@ -49,7 +124,7 @@ def send_to_slack(text: str):
             "Content-Type": "application/json; charset=utf-8",
         },
         json={
-            "channel": SLACK_CHANNEL_ID,
+            "channel": channel_id,
             "text": fallback,
             "attachments": [
                 {
@@ -106,7 +181,7 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
         event_type=payload.get("eventtype", "nms-event"),
         state=state,
         severity=payload.get("severity", "critical"),
-        device=payload.get("hostname") or payload.get("sysName") or payload.get("device", "unknown-device"),
+        device=payload.get("hostname") or payload.get("sysName") or payload.get("sysname") or payload.get("device", "unknown-device"),
         summary=summary,
         details=details,
         ip=payload.get("ip"),
@@ -156,24 +231,27 @@ def health():
 def webhook_graylog():
     payload = request.get_json(silent=True) or {}
     text = render_alert("graylog", payload)
-    send_to_slack(text)
-    return jsonify({"ok": True, "source": "graylog", "text": text}), 200
+    channel_id = slack_channel_for_alert("graylog", payload, text)
+    send_to_slack(text, channel_id)
+    return jsonify({"ok": True, "source": "graylog", "channel": channel_id, "text": text}), 200
 
 
 @app.post("/webhook/nms")
 def webhook_nms():
     payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
     text = render_alert("nms", payload)
-    send_to_slack(text)
-    return jsonify({"ok": True, "source": "nms", "text": text}), 200
+    channel_id = slack_channel_for_alert("nms", payload, text)
+    send_to_slack(text, channel_id)
+    return jsonify({"ok": True, "source": "nms", "channel": channel_id, "text": text}), 200
 
 
 @app.post("/webhook/mist")
 def webhook_mist():
     payload = request.get_json(silent=True) or {}
     text = render_alert("mist", payload)
-    send_to_slack(text)
-    return jsonify({"ok": True, "source": "mist", "text": text}), 200
+    channel_id = slack_channel_for_alert("mist", payload, text)
+    send_to_slack(text, channel_id)
+    return jsonify({"ok": True, "source": "mist", "channel": channel_id, "text": text}), 200
 
 
 if __name__ == "__main__":
