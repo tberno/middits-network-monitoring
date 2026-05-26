@@ -68,3 +68,17 @@ Notes:
 
 Do not commit the full live nginx config from /etc/nginx/conf.d/librenms-ssl.conf.
 That file can contain unrelated internal routes or secrets.
+
+Final sysName-based download URL:
+
+https://raccoon.middlebury.edu/oxidized-download/{{ $device->os }}/{{ rawurlencode($device->hostname) }}/{{ rawurlencode(($device->sysName ?: $device->hostname) . ".txt") }}
+
+This fetches the config by LibreNMS hostname/IP, but saves the downloaded file using sysName when available.
+
+Example:
+
+https://raccoon.middlebury.edu/oxidized-download/junos/140.233.100.10/aggregation-a.txt
+
+Expected download filename:
+
+aggregation-a.txt
