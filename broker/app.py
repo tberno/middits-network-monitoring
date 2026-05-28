@@ -470,6 +470,57 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
 
 
 # -----------------------------------------------------------------------------
+# NMS / LibreNMS helper functions
+#
+# LibreNMS may send hostname as an IP address depending on how the device is
+# stored. For Slack display, we prefer sysName/sysname when it exists, then a
+# non-IP hostname, then device/name, and only fall back to an IP if that is all
+# we have.
+# -----------------------------------------------------------------------------
+
+def is_ip_like(value: str) -> bool:
+    if not value:
+        return False
+
+    value = str(value).strip()
+
+    # Simple IPv4 check. This is enough for deciding display name vs IP.
+    parts = value.split(".")
+    if len(parts) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
+        return True
+
+    return False
+
+
+def best_device_name(payload: dict) -> str:
+    """
+    Pick the best display name for an NMS/LibreNMS alert.
+
+    LibreNMS can sometimes send hostname as an IP address. Prefer sysName/sysname
+    when present, then hostname if it is not just an IP, then device/name, then IP.
+    """
+    candidates = [
+        payload.get("sysName"),
+        payload.get("sysname"),
+        payload.get("hostname"),
+        payload.get("device"),
+        payload.get("name"),
+    ]
+
+    # First pass: prefer real names over IP addresses.
+    for value in candidates:
+        if value and not is_ip_like(value):
+            return str(value).strip()
+
+    # Second pass: allow IP if that is all we have.
+    for value in candidates:
+        if value:
+            return str(value).strip()
+
+    return payload.get("ip") or "unknown-device"
+
+
+# -----------------------------------------------------------------------------
 # NMS / LibreNMS normalizer
 #
 # Converts LibreNMS form-encoded data into the common NormalizedAlert shape.
@@ -503,7 +554,7 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
         event_type=payload.get("eventtype", "nms-event"),
         state=state,
         severity=payload.get("severity", "critical"),
-        device=payload.get("hostname") or payload.get("sysName") or payload.get("sysname") or payload.get("device", "unknown-device"),
+        device=best_device_name(payload),
         summary=summary,
         details=details,
         ip=payload.get("ip"),
