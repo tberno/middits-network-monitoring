@@ -1,0 +1,65 @@
+[
+  {
+    "title": "Network Services: DHCP Service Failed or Stopped",
+    "description": "DHCP daemon stopped, failed, exited, or is not running.",
+    "priority": 2,
+    "query": "message:dhcpd AND (message:stopped OR message:failed OR message:\"not running\" OR message:terminated OR message:exited)",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: DHCP Failover Peer Issue",
+    "description": "DHCP failover/peer/partner communication issue.",
+    "priority": 2,
+    "query": "message:dhcpd AND (message:failover OR message:peer OR message:partner OR message:\"communications-interrupted\" OR message:\"not responding\")",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: DHCP Config Load Failure",
+    "description": "DHCP configuration syntax, parsing, or load failure.",
+    "priority": 2,
+    "query": "message:dhcpd AND (message:\"syntax error\" OR message:\"bad config\" OR message:\"configuration file\" OR message:\"failed to load\" OR message:\"parse error\")",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: DNS Service Failed or Stopped",
+    "description": "DNS service stopped, failed, exited, or is not running.",
+    "priority": 2,
+    "query": "(message:named OR message:bind) AND (message:stopped OR message:failed OR message:\"not running\" OR message:exited OR message:terminated)",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: DNS Zone Load Failure",
+    "description": "DNS zone failed to load or has errors.",
+    "priority": 2,
+    "query": "(message:named OR message:bind) AND message:zone AND (message:failed OR message:\"not loaded\" OR message:\"loading failed\" OR message:\"has errors\" OR message:\"not loaded due to errors\")",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: DNS Zone Transfer Failure",
+    "description": "DNS AXFR/IXFR/zone transfer or refresh failure.",
+    "priority": 3,
+    "query": "(message:named OR message:bind) AND (message:\"zone transfer\" OR message:AXFR OR message:IXFR OR message:\"transfer failed\" OR message:\"refresh failed\" OR message:\"transfer of\")",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: EIP Deployment or Publish Failure",
+    "description": "EfficientIP/SOLIDserver deployment, push, publication, or publish failure.",
+    "priority": 2,
+    "query": "(message:SOLIDserver OR message:efficientip OR message:eip) AND (message:deploy OR message:deployment OR message:push OR message:publish OR message:publication) AND (message:failed OR message:error)",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: EIP Core or Database Service Failure",
+    "description": "EfficientIP/SOLIDserver core service or database failure.",
+    "priority": 2,
+    "query": "(message:SOLIDserver OR message:efficientip OR message:eip OR message:database OR message:postgres OR message:mysql) AND (message:failed OR message:stopped OR message:\"not running\" OR message:\"connection refused\" OR message:\"database unavailable\")",
+    "group_by": ["source"]
+  },
+  {
+    "title": "Network Services: EIP Backup Failure",
+    "description": "EfficientIP/SOLIDserver backup or archive failure.",
+    "priority": 4,
+    "query": "(message:backup OR message:archive) AND (message:failed OR message:error OR message:failure)",
+    "group_by": ["source"]
+  }
+]
