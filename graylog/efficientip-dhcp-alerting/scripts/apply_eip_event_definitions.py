@@ -11,7 +11,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 
-DEFAULT_TEMPLATE_TITLE = "Network Services: DHCP Lease Exhaustion"
+DEFAULT_TEMPLATE_TITLE = "EfficientIP: DHCP Lease Exhaustion"
 DEFAULT_CATALOG = "config/eip_graylog_alerts.json"
 
 
