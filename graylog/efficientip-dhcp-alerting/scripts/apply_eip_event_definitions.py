@@ -185,8 +185,14 @@ def main():
             request_json(session, "PUT", base, f"/events/definitions/{existing['id']}", data=json.dumps(current))
             print(f"  action: updated {existing['id']}")
         else:
-            created = request_json(session, "POST", base, "/events/definitions", data=json.dumps(payload))
-            print(f"  action: created {created.get('id') if isinstance(created, dict) else 'ok'}")
+            # Graylog 7.x expects creates to use the CreateEntityRequest wrapper.
+            # Updating an existing definition still uses the raw event definition body.
+            create_body = {"entity": payload}
+            created = request_json(session, "POST", base, "/events/definitions", data=json.dumps(create_body))
+
+            created_entity = created.get("entity") if isinstance(created, dict) and isinstance(created.get("entity"), dict) else created
+            created_id = created_entity.get("id") if isinstance(created_entity, dict) else "ok"
+            print(f"  action: created {created_id}")
 
     if not args.apply:
         print()
