@@ -453,18 +453,145 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
 # -----------------------------------------------------------------------------
 
 def normalize_graylog(payload: dict) -> NormalizedAlert:
+    """
+    Normalize Graylog HTTP notifications.
+
+    Supports:
+      1. Simple/custom payloads posted directly to /webhook/graylog.
+      2. Graylog's default HTTP notification payload with event.fields/backlog.
+      3. DHCP lease exhaustion fields added by the Graylog pipeline parser.
+    """
+
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_definition = payload.get("event_definition") if isinstance(payload.get("event_definition"), dict) else {}
+    fields = event.get("fields") if isinstance(event.get("fields"), dict) else {}
+
+    backlog_fields = {}
+    backlog = payload.get("backlog") or payload.get("messages") or []
+    if isinstance(backlog, list) and backlog:
+        first = backlog[0]
+        if isinstance(first, dict):
+            msg = first.get("message")
+            if isinstance(msg, dict):
+                backlog_fields.update(msg)
+            for key, value in first.items():
+                if key != "message":
+                    backlog_fields[key] = value
+
+    sources = (payload, fields, backlog_fields, event, event_definition)
+
+    def pick(*keys):
+        for src in sources:
+            if not isinstance(src, dict):
+                continue
+            for key in keys:
+                value = src.get(key)
+                if value is not None and value != "":
+                    return value
+        return None
+
+    def as_text(value):
+        if value is None:
+            return ""
+        return str(value)
+
+    alert_type = as_text(pick("alert_type", "eventtype", "type"))
+    dhcp_server_ip = pick("dhcp_server_ip", "gl2_remote_ip")
+    dhcp_network = pick("dhcp_network")
+    dhcp_interface = pick("dhcp_interface")
+    dhcp_client_mac = pick("dhcp_client_mac")
+    dhcp_status = pick("dhcp_status")
+    service = pick("service", "alert_service")
+
+    raw_message = (
+        pick("message")
+        or pick("full_message")
+        or event.get("message")
+        or ""
+    )
+
+    summary = (
+        pick("summary")
+        or pick("alert_summary")
+        or event_definition.get("title")
+        or pick("title")
+        or pick("name")
+        or pick("eventtype")
+        or "Graylog alert"
+    )
+
+    device = (
+        pick("device")
+        or dhcp_server_ip
+        or pick("host")
+        or pick("source")
+        or "unknown-device"
+    )
+
+    severity = pick("severity")
+    if not severity:
+        priority = as_text(pick("priority")).lower()
+        if priority in ("0", "1", "2", "critical", "high", "major"):
+            severity = "critical"
+        elif priority:
+            severity = priority
+        else:
+            severity = "critical"
+
+    fired_at = (
+        pick("firedat")
+        or pick("timestamp")
+        or event.get("timestamp")
+        or payload.get("triggered_at")
+    )
+
+    link = pick("link") or pick("url") or event.get("url")
+
+    is_dhcp = (
+        "dhcp" in alert_type.lower()
+        or dhcp_network
+        or dhcp_client_mac
+        or "no free leases" in as_text(raw_message).lower()
+    )
+
+    if is_dhcp:
+        if as_text(raw_message).startswith("Service: DHCP"):
+            details = as_text(raw_message)
+        else:
+            detail_lines = []
+            detail_lines.append("Service: {}".format(service or "DHCP"))
+
+            if dhcp_server_ip:
+                detail_lines.append("DHCP Server IP: {}".format(dhcp_server_ip))
+            if dhcp_network:
+                detail_lines.append("Network: {}".format(dhcp_network))
+            if dhcp_interface:
+                detail_lines.append("Interface: {}".format(dhcp_interface))
+            if dhcp_client_mac:
+                detail_lines.append("Client MAC: {}".format(dhcp_client_mac))
+            if dhcp_status:
+                detail_lines.append("Status: {}".format(dhcp_status))
+
+            if raw_message:
+                detail_lines.append("")
+                detail_lines.append("Raw: {}".format(raw_message))
+
+            details = "\n".join(detail_lines)
+    else:
+        details = pick("details") or raw_message or ""
+
     return NormalizedAlert(
         source="graylog",
-        event_type=payload.get("eventtype", "graylog-event"),
-        state=payload.get("state", "alert"),
-        severity=payload.get("severity") or payload.get("priority") or "critical",
-        device=payload.get("device") or payload.get("host") or payload.get("source") or "unknown-device",
-        summary=payload.get("summary") or payload.get("title") or payload.get("eventtype") or "Graylog alert",
-        details=payload.get("details") or payload.get("message") or "",
-        alert_id=payload.get("alertid") or payload.get("id"),
-        fired_at=payload.get("firedat") or payload.get("timestamp"),
-        resolved_at=payload.get("resolvedat"),
-        link=payload.get("link") or payload.get("url"),
+        event_type=alert_type or "graylog-event",
+        state=pick("state") or "alert",
+        severity=as_text(severity),
+        device=as_text(device),
+        summary=as_text(summary),
+        details=as_text(details),
+        alert_id=pick("alertid") or pick("id"),
+        fired_at=as_text(fired_at) if fired_at else None,
+        resolved_at=pick("resolvedat"),
+        link=as_text(link) if link else None,
         metadata=payload,
     )
 
