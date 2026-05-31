@@ -174,7 +174,11 @@ def save_state(state: dict) -> None:
     if state_dir:
         os.makedirs(state_dir, exist_ok=True)
 
-    fd, tmp_path = tempfile.mkstemp(prefix="slack-state-", suffix=".json", dir=state_dir or None)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix="slack-state-",
+        suffix=".json",
+        dir=state_dir or None,
+    )
 
     try:
         with os.fdopen(fd, "w") as f:
@@ -191,22 +195,27 @@ def alert_state_key(alert: NormalizedAlert) -> str:
     """
     Build a stable key used to match an alert with its recovery.
 
-    Best case:
-        source + alert_id
+    Important:
+        For NMS/LibreNMS, do not use alert_id first. LibreNMS $uid can differ
+        between the alert and recovery notification, which causes the recovery
+        to post as a new Slack message instead of updating the original.
 
-    Fallback:
+    NMS/LibreNMS:
         source + device + rule/summary
 
-    For LibreNMS, alert_id may or may not be stable depending on the transport
-    body. The device/rule fallback keeps device down/up pairs tied together.
+    Other sources:
+        source + alert_id when available, otherwise source + device + rule/summary
     """
     source = (alert.source or "unknown").lower()
 
-    if alert.alert_id:
-        return "{}:id:{}".format(source, str(alert.alert_id).strip().lower())
-
     device = str(alert.device or "unknown-device").strip().lower()
     rule = str(alert.rule or alert.summary or alert.event_type or "unknown-rule").strip().lower()
+
+    if source == "nms":
+        return "{}:device:{}:rule:{}".format(source, device, rule)
+
+    if alert.alert_id:
+        return "{}:id:{}".format(source, str(alert.alert_id).strip().lower())
 
     return "{}:device:{}:rule:{}".format(source, device, rule)
 
