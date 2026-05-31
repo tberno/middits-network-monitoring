@@ -243,11 +243,13 @@ def build_slack_payload(text: str, channel_id: str) -> dict:
         "text": fallback,
 
         # Visible Slack message body with colored side bar.
+        # mrkdwn_in enables Slack formatting/backticks inside attachment text.
         "attachments": [
             {
                 "color": color,
                 "text": attachment_text,
                 "fallback": fallback,
+                "mrkdwn_in": ["text", "fallback"],
             }
         ],
 

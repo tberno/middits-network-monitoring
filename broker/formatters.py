@@ -1,10 +1,27 @@
-
 from broker.mappings import SEVERITY_TO_EMOJI, STATE_LABEL, SOURCE_LABEL
 from broker.templates import ALERT_TEMPLATE, DETAILS_TEMPLATE
 
 
 def _line(label: str, value):
     return f"\n{label}: {value}" if value else ""
+
+
+def _code_value(value):
+    """
+    Format alert detail/message values in Slack inline-code style.
+
+    This makes only the right-side message/detail text use Slack's code-style
+    font, similar to the native Graylog alert appearance.
+    """
+    if not value:
+        return ""
+
+    cleaned = str(value).strip()
+
+    # Avoid breaking Slack inline-code formatting if the alert contains backticks.
+    cleaned = cleaned.replace("`", "'")
+
+    return f"`{cleaned}`"
 
 
 def formatslackalert(alert):
@@ -20,7 +37,7 @@ def formatslackalert(alert):
 
     details_block = ""
     if alert.details:
-        details_block = DETAILS_TEMPLATE.format(details=alert.details.strip())
+        details_block = DETAILS_TEMPLATE.format(details=_code_value(alert.details))
 
     return ALERT_TEMPLATE.format(
         emoji=emoji,
@@ -36,7 +53,8 @@ def formatslackalert(alert):
         resolved_line=_line("Resolved", alert.resolved_at),
         downtime_line=_line("Downtime", alert.downtime),
         link_line=_line("Link", alert.link),
-        
     )
+
+
 # Backward-compatible name expected by broker/app.py
 format_slack_alert = formatslackalert
