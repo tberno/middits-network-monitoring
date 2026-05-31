@@ -2,26 +2,30 @@ from broker.mappings import SEVERITY_TO_EMOJI, STATE_LABEL, SOURCE_LABEL
 from broker.templates import ALERT_TEMPLATE, DETAILS_TEMPLATE
 
 
-def _line(label: str, value):
-    return f"\n{label}: {value}" if value else ""
-
-
 def _code_value(value):
     """
-    Format alert detail/message values in Slack inline-code style.
+    Format values in Slack inline-code style.
 
-    This makes only the right-side message/detail text use Slack's code-style
-    font, similar to the native Graylog alert appearance.
+    This makes the right-side field values use Slack's code-style font,
+    similar to the native Graylog alert formatting.
     """
     if not value:
         return ""
 
     cleaned = str(value).strip()
 
-    # Avoid breaking Slack inline-code formatting if the alert contains backticks.
+    # Avoid breaking Slack inline-code formatting if the value contains backticks.
     cleaned = cleaned.replace("`", "'")
 
     return f"`{cleaned}`"
+
+
+def _line(label: str, value, code: bool = True):
+    if not value:
+        return ""
+
+    rendered_value = _code_value(value) if code else value
+    return f"\n{label}: {rendered_value}"
 
 
 def formatslackalert(alert):
@@ -44,15 +48,20 @@ def formatslackalert(alert):
         state_label=state_label,
         source=source_label,
         summary=alert.summary,
-        device=alert.device,
+
+        # Right-side values formatted as Slack inline code.
+        device=_code_value(alert.device),
+        severity=_code_value(alert.severity.upper()),
+
         details_block=details_block,
-        severity=alert.severity.upper(),
         ip_line=_line("IP", alert.ip),
         rule_line=_line("Rule", alert.rule),
         fired_line=_line("Fired", alert.fired_at),
         resolved_line=_line("Resolved", alert.resolved_at),
         downtime_line=_line("Downtime", alert.downtime),
-        link_line=_line("Link", alert.link),
+
+        # Keep links clickable instead of wrapping them in code.
+        link_line=_line("Link", alert.link, code=False),
     )
 
 
