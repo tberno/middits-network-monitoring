@@ -14,6 +14,10 @@ def _code_value(value):
 
     cleaned = str(value).strip()
 
+    # Treat empty strings and stray formatting characters as empty.
+    if not cleaned or cleaned in ("`", "``", "```"):
+        return ""
+
     # Avoid breaking Slack inline-code formatting if the value contains backticks.
     cleaned = cleaned.replace("`", "'")
 
@@ -25,6 +29,10 @@ def _line(label: str, value, code: bool = True):
         return ""
 
     rendered_value = _code_value(value) if code else value
+
+    if not rendered_value:
+        return ""
+
     return f"\n{label}: {rendered_value}"
 
 
@@ -40,8 +48,10 @@ def formatslackalert(alert):
     source_label = SOURCE_LABEL.get(alert.source.lower(), alert.source)
 
     details_block = ""
-    if alert.details:
-        details_block = DETAILS_TEMPLATE.format(details=_code_value(alert.details))
+    coded_details = _code_value(alert.details)
+
+    if coded_details:
+        details_block = DETAILS_TEMPLATE.format(details=coded_details)
 
     return ALERT_TEMPLATE.format(
         emoji=emoji,

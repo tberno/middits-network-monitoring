@@ -35,20 +35,6 @@ app = Flask(__name__)
 
 # -----------------------------------------------------------------------------
 # Slack configuration
-#
-# These values come from /etc/alert-broker.env through systemd EnvironmentFile.
-#
-# Required:
-#   SLACK_BOT_TOKEN       Bot token used for Slack chat.postMessage/chat.update.
-#
-# Channel variables:
-#   SLACK_CHANNEL_ID      Default fallback channel.
-#   SLACK_NMS_CHANNEL_ID  NMS/network/switch alerts.
-#   SLACK_WIFI_CHANNEL_ID Mist WiFi/AP/client/wireless alerts.
-#
-# State:
-#   STATEFILE             Optional path to JSON state file.
-#                         Defaults to /var/lib/alert-broker/slack-state.json.
 # -----------------------------------------------------------------------------
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
@@ -65,21 +51,31 @@ STATE_FILE = os.getenv("STATEFILE") or "/var/lib/alert-broker/slack-state.json"
 
 
 # -----------------------------------------------------------------------------
+# General helpers
+# -----------------------------------------------------------------------------
+
+def _first_nonempty(*values):
+    """
+    Return the first useful value from a list of possible values.
+
+    This is used mostly for Graylog because different Graylog notification
+    templates can send different field names.
+    """
+    for value in values:
+        if value is None:
+            continue
+
+        cleaned = str(value).strip()
+
+        # Treat empty strings and stray Slack formatting characters as empty.
+        if cleaned and cleaned not in ("`", "``", "```"):
+            return cleaned
+
+    return None
+
+
+# -----------------------------------------------------------------------------
 # Slack color selection
-#
-# Slack attachment colors:
-#   "good"    = green
-#   "danger"  = red
-#   "#ff9900" = orange
-#   "#1f6feb" = blue
-#   "#808080" = gray
-#
-# This function looks at the final rendered alert text and chooses the side-bar
-# color for the Slack attachment.
-#
-# Important:
-#   WARNING must be checked before DOWN because some rule names contain text like
-#   "UPS up/down". If DOWN is checked first, warning UPS alerts become red.
 # -----------------------------------------------------------------------------
 
 def slack_color_for_text(text: str) -> str:
@@ -104,28 +100,63 @@ def slack_color_for_text(text: str) -> str:
 # Slack notification / fallback text
 #
 # Top-level Slack "text" is what mobile push notifications and desktop toast
-# notifications use.
-#
-# We use the first line of the alert so phone/toast notifications are useful:
-#   ALERT [NMS] Devices up / down
-#
-# To avoid duplicate display in-channel, slack_attachment_text() removes that
-# same first line from the visible attachment body.
+# notifications use. We keep it compact but include useful fields.
 # -----------------------------------------------------------------------------
 
+def _field_from_rendered_text(text: str, label: str) -> str:
+    """
+    Extract a field value from already-rendered Slack text.
+
+    Example rendered lines:
+        Device: `switch-name`
+        Severity: `CRITICAL`
+        IP: `140.233.10.15`
+    """
+    prefix = "{}:".format(label)
+
+    for line in text.splitlines():
+        line = line.strip()
+
+        if line.startswith(prefix):
+            value = line[len(prefix):].strip()
+
+            # Remove Slack inline-code backticks for cleaner phone previews.
+            return value.strip("`").strip()
+
+    return ""
+
+
 def slack_fallback_for_text(text: str) -> str:
-    first_line = text.splitlines()[0].strip() if text else "Network alert"
-    return first_line or "Network alert"
+    """
+    Build the top-level Slack text used by phone/toast notifications.
+
+    Example:
+        ALERT [NMS] Devices up / down | Device: switch01 | Severity: CRITICAL | IP: 1.2.3.4
+    """
+    if not text:
+        return "Network alert"
+
+    title = text.splitlines()[0].strip() or "Network alert"
+    device = _field_from_rendered_text(text, "Device")
+    severity = _field_from_rendered_text(text, "Severity")
+    ip = _field_from_rendered_text(text, "IP")
+
+    parts = [title]
+
+    if device:
+        parts.append("Device: {}".format(device))
+
+    if severity:
+        parts.append("Severity: {}".format(severity))
+
+    if ip:
+        parts.append("IP: {}".format(ip))
+
+    return " | ".join(parts)
 
 
 # -----------------------------------------------------------------------------
 # Slack attachment body
-#
-# Slack displays top-level "text" above the attachment. If the attachment also
-# contains the first line, the channel shows a duplicate title.
-#
-# This removes the first line from the attachment body while keeping the useful
-# title in mobile/toast notifications.
 # -----------------------------------------------------------------------------
 
 def slack_attachment_text(text: str) -> str:
@@ -139,21 +170,6 @@ def slack_attachment_text(text: str) -> str:
 
 # -----------------------------------------------------------------------------
 # Slack state storage
-#
-# Used to update the original Slack message when a resolved event arrives.
-#
-# Flow:
-#   ALERT:
-#       chat.postMessage
-#       save returned Slack channel + ts in STATE_FILE
-#
-#   RESOLVED:
-#       look up saved channel + ts
-#       chat.update original message
-#       remove saved state entry
-#
-# If no saved entry exists for a resolved event, we fall back to posting a new
-# message so the recovery is not lost.
 # -----------------------------------------------------------------------------
 
 def load_state() -> dict:
@@ -226,9 +242,6 @@ def is_resolved_alert(alert: NormalizedAlert) -> bool:
 
 # -----------------------------------------------------------------------------
 # Slack payload builder
-#
-# Used by both chat.postMessage and chat.update so alert and resolved messages
-# have the same formatting.
 # -----------------------------------------------------------------------------
 
 def build_slack_payload(text: str, channel_id: str) -> dict:
@@ -364,11 +377,7 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
 
 
 # -----------------------------------------------------------------------------
-# Routing helper: combine source + rendered alert + original payload
-#
-# Used by slack_channel_for_alert() to make a routing decision. We include the
-# rendered text and every payload value so terms like "ap_down", "wireless",
-# "switch", "gateway", "ssid", etc. can be matched.
+# Routing helper
 # -----------------------------------------------------------------------------
 
 def _combined_payload_text(source: str, payload: dict, text: str) -> str:
@@ -383,16 +392,6 @@ def _combined_payload_text(source: str, payload: dict, text: str) -> str:
 
 # -----------------------------------------------------------------------------
 # Slack channel routing
-#
-# Rules:
-#   - NMS/LibreNMS alerts go to the NMS/network channel.
-#   - Graylog alerts go to the NMS/network channel.
-#   - Mist AP/WiFi/client/wireless alerts go to the WiFi channel.
-#   - Mist switch/routing/interface alerts go to the NMS/network channel.
-#
-# The Mist bot already sends useful fields like eventtype, device, summary,
-# details, site, ip, mac, firedat, resolvedat, and link. We use those fields to
-# decide where the alert should go.
 # -----------------------------------------------------------------------------
 
 def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
@@ -453,27 +452,75 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
 
 # -----------------------------------------------------------------------------
 # Graylog normalizer
-#
-# Converts Graylog JSON into the common NormalizedAlert shape.
-#
-# Graylog field names can vary, so this accepts multiple aliases:
-#   device / host / source
-#   details / message
-#   firedat / timestamp
-#   link / url
 # -----------------------------------------------------------------------------
 
 def normalize_graylog(payload: dict) -> NormalizedAlert:
+    """
+    Convert Graylog JSON into the common NormalizedAlert shape.
+
+    Graylog notification templates vary a lot. This tries several common field
+    names so we do not end up with unknown-device or empty details when Graylog
+    sends event-specific keys.
+    """
+    device = _first_nonempty(
+        payload.get("device"),
+        payload.get("host"),
+        payload.get("hostname"),
+        payload.get("source"),
+        payload.get("event_source"),
+        payload.get("event.source"),
+        payload.get("gl2_source_input"),
+        payload.get("gl2_source_node"),
+        payload.get("origin"),
+    ) or "unknown-device"
+
+    summary = _first_nonempty(
+        payload.get("summary"),
+        payload.get("title"),
+        payload.get("event_definition_title"),
+        payload.get("event_definition"),
+        payload.get("eventtype"),
+        payload.get("event_type"),
+        payload.get("alert_title"),
+    ) or "Graylog alert"
+
+    details = _first_nonempty(
+        payload.get("details"),
+        payload.get("message"),
+        payload.get("event_message"),
+        payload.get("description"),
+        payload.get("alert_description"),
+        payload.get("backlog_message"),
+        payload.get("fields.message"),
+    ) or ""
+
+    severity = _first_nonempty(
+        payload.get("severity"),
+        payload.get("priority"),
+        payload.get("event_priority"),
+    ) or "critical"
+
+    # Graylog priority is often numeric. Normalize common values.
+    severity_map = {
+        "1": "critical",
+        "2": "critical",
+        "3": "critical",
+        "4": "warning",
+        "5": "info",
+    }
+
+    severity = severity_map.get(str(severity).lower(), str(severity))
+
     return NormalizedAlert(
         source="graylog",
-        event_type=payload.get("eventtype", "graylog-event"),
+        event_type=payload.get("eventtype") or payload.get("event_type") or "graylog-event",
         state=payload.get("state", "alert"),
-        severity=payload.get("severity") or payload.get("priority") or "critical",
-        device=payload.get("device") or payload.get("host") or payload.get("source") or "unknown-device",
-        summary=payload.get("summary") or payload.get("title") or payload.get("eventtype") or "Graylog alert",
-        details=payload.get("details") or payload.get("message") or "",
-        alert_id=payload.get("alertid") or payload.get("id"),
-        fired_at=payload.get("firedat") or payload.get("timestamp"),
+        severity=severity,
+        device=device,
+        summary=summary,
+        details=details,
+        alert_id=payload.get("alertid") or payload.get("id") or payload.get("event_id"),
+        fired_at=payload.get("firedat") or payload.get("timestamp") or payload.get("event_timestamp"),
         resolved_at=payload.get("resolvedat"),
         link=payload.get("link") or payload.get("url"),
         metadata=payload,
@@ -482,11 +529,6 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
 
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS helper functions
-#
-# LibreNMS may send hostname as an IP address depending on how the device is
-# stored. For Slack display, we prefer sysName/sysname when it exists, then a
-# non-IP hostname, then device/name, and only fall back to an IP if that is all
-# we have.
 # -----------------------------------------------------------------------------
 
 def is_ip_like(value: str) -> bool:
@@ -533,16 +575,6 @@ def best_device_name(payload: dict) -> str:
 
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS normalizer
-#
-# Converts LibreNMS form-encoded data into the common NormalizedAlert shape.
-#
-# LibreNMS state convention:
-#   state=1 -> alert
-#   anything else -> resolved
-#
-# Details:
-#   Prefer a parsed "faults" list if present.
-#   Otherwise use details= from the LibreNMS transport body.
 # -----------------------------------------------------------------------------
 
 def normalize_nms(payload: dict) -> NormalizedAlert:
@@ -581,12 +613,6 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
 
 # -----------------------------------------------------------------------------
 # Mist normalizer
-#
-# Converts Mist bot JSON into the common NormalizedAlert shape.
-#
-# Mist bot already sends:
-#   eventtype, state, severity, device, summary, details, alertid,
-#   firedat, resolvedat, link, and metadata fields like site/ip/mac.
 # -----------------------------------------------------------------------------
 
 def normalize_mist(payload: dict) -> NormalizedAlert:
@@ -608,13 +634,6 @@ def normalize_mist(payload: dict) -> NormalizedAlert:
 
 # -----------------------------------------------------------------------------
 # Alert normalizer/renderer
-#
-# Picks the correct normalizer by source, then passes the normalized alert into
-# broker.formatters.format_slack_alert().
-#
-# Returns both:
-#   alert: normalized alert object used for state key/update behavior
-#   text:  rendered Slack text
 # -----------------------------------------------------------------------------
 
 def normalize_and_render_alert(source: str, payload: dict):
@@ -632,8 +651,6 @@ def normalize_and_render_alert(source: str, payload: dict):
 
 # -----------------------------------------------------------------------------
 # Health endpoint
-#
-# Used by curl and monitoring to confirm the broker process is responding.
 # -----------------------------------------------------------------------------
 
 @app.get("/health")
@@ -643,8 +660,6 @@ def health():
 
 # -----------------------------------------------------------------------------
 # Shared webhook processor
-#
-# All source-specific routes call this after reading their payload.
 # -----------------------------------------------------------------------------
 
 def process_webhook(source: str, payload: dict):
@@ -665,13 +680,6 @@ def process_webhook(source: str, payload: dict):
 
 # -----------------------------------------------------------------------------
 # Graylog webhook
-#
-# Flow:
-#   1. Read JSON payload.
-#   2. Normalize/render alert text.
-#   3. Choose Slack channel.
-#   4. Post new Slack alert or update original message on recovery.
-#   5. Return JSON including chosen channel/action for troubleshooting.
 # -----------------------------------------------------------------------------
 
 @app.post("/webhook/graylog")
@@ -682,13 +690,6 @@ def webhook_graylog():
 
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS webhook
-#
-# Flow:
-#   1. Read JSON if present; otherwise read form-encoded data.
-#   2. Normalize/render alert text.
-#   3. Route to NMS/network Slack channel.
-#   4. Post new Slack alert or update original message on recovery.
-#   5. Return JSON including chosen channel/action for troubleshooting.
 # -----------------------------------------------------------------------------
 
 @app.post("/webhook/nms")
@@ -699,13 +700,6 @@ def webhook_nms():
 
 # -----------------------------------------------------------------------------
 # Mist webhook
-#
-# Flow:
-#   1. Read JSON payload from Mist bot.
-#   2. Normalize/render alert text.
-#   3. Route WiFi/AP alerts to WiFi channel or switch/network alerts to NMS.
-#   4. Post new Slack alert or update original message on recovery.
-#   5. Return JSON including chosen channel/action for troubleshooting.
 # -----------------------------------------------------------------------------
 
 @app.post("/webhook/mist")
@@ -716,9 +710,6 @@ def webhook_mist():
 
 # -----------------------------------------------------------------------------
 # Local development entry point
-#
-# Production does not use this directly. Production runs:
-#   gunicorn --bind 127.0.0.1:5052 --workers 2 --threads 4 broker.app:app
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
