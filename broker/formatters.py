@@ -29,24 +29,26 @@ def _display(value):
 
 def _build_header(alert):
     """
-    Keep the Slack top line clean.
+    Keep the Slack top line clean but useful.
 
     Example:
-        ALERT [NMS] test-switch-name
+        ALERT [NMS] test-switch-name - Devices up / down
 
-    The rule/summary still appears in the body as Rule.
+    The body still includes device, severity, IP, rule, details, and link.
     """
     state_label = STATE_LABEL.get((alert.state or "").lower(), (alert.state or "").upper())
     source_label = SOURCE_LABEL.get((alert.source or "").lower(), alert.source or "")
     device = _display(alert.device)
+    rule = _display(alert.rule or alert.summary)
+
+    if device and rule:
+        return f"{state_label} [{source_label}] {device} - {rule}"
 
     if device:
         return f"{state_label} [{source_label}] {device}"
 
-    summary = _display(alert.summary)
-
-    if summary:
-        return f"{state_label} [{source_label}] {summary}"
+    if rule:
+        return f"{state_label} [{source_label}] {rule}"
 
     return f"{state_label} [{source_label}] Alert"
 
