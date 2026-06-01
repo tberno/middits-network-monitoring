@@ -1,8 +1,9 @@
-ALERT_TEMPLATE = """{state_label} [{source}] {summary}
+ALERT_TEMPLATE = """{header}
+
 Device: {device}
-Severity: {severity}{ip_line}{rule_line}{fired_line}{resolved_line}{downtime_line}{link_line}{details_block}"""
+Severity: {severity}{ip_line}{rule_line}{fired_line}{resolved_line}{downtime_line}{details_block}{link_line}"""
 
 DETAILS_TEMPLATE = """
+
 Details:
-{details}
-"""
+{details}"""
