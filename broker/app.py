@@ -100,59 +100,12 @@ def slack_color_for_text(text: str) -> str:
 # Slack notification / fallback text
 #
 # Top-level Slack "text" is what mobile push notifications and desktop toast
-# notifications use. We keep it compact but include useful fields.
+# notifications use. Keep this simple: just the first rendered line.
 # -----------------------------------------------------------------------------
 
-def _field_from_rendered_text(text: str, label: str) -> str:
-    """
-    Extract a field value from already-rendered Slack text.
-
-    Example rendered lines:
-        Device: `switch-name`
-        Severity: `CRITICAL`
-        IP: `140.233.10.15`
-    """
-    prefix = "{}:".format(label)
-
-    for line in text.splitlines():
-        line = line.strip()
-
-        if line.startswith(prefix):
-            value = line[len(prefix):].strip()
-
-            # Remove Slack inline-code backticks for cleaner phone previews.
-            return value.strip("`").strip()
-
-    return ""
-
-
 def slack_fallback_for_text(text: str) -> str:
-    """
-    Build the top-level Slack text used by phone/toast notifications.
-
-    Example:
-        ALERT [NMS] Devices up / down | Device: switch01 | Severity: CRITICAL | IP: 1.2.3.4
-    """
-    if not text:
-        return "Network alert"
-
-    title = text.splitlines()[0].strip() or "Network alert"
-    device = _field_from_rendered_text(text, "Device")
-    severity = _field_from_rendered_text(text, "Severity")
-    ip = _field_from_rendered_text(text, "IP")
-
-    parts = [title]
-
-    if device:
-        parts.append("Device: {}".format(device))
-
-    if severity:
-        parts.append("Severity: {}".format(severity))
-
-    if ip:
-        parts.append("IP: {}".format(ip))
-
-    return " | ".join(parts)
+    first_line = text.splitlines()[0].strip() if text else "Network alert"
+    return first_line or "Network alert"
 
 
 # -----------------------------------------------------------------------------

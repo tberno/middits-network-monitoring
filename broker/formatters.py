@@ -28,15 +28,27 @@ def _display(value):
 
 
 def _build_header(alert):
+    """
+    Keep the Slack top line clean.
+
+    Example:
+        ALERT [NMS] test-switch-name
+
+    The rule/summary still appears in the body as Rule.
+    """
     state_label = STATE_LABEL.get((alert.state or "").lower(), (alert.state or "").upper())
     source_label = SOURCE_LABEL.get((alert.source or "").lower(), alert.source or "")
-    summary = _display(alert.summary)
     device = _display(alert.device)
 
     if device:
-        return f"{state_label} [{source_label}] {summary} - {device}"
+        return f"{state_label} [{source_label}] {device}"
 
-    return f"{state_label} [{source_label}] {summary}"
+    summary = _display(alert.summary)
+
+    if summary:
+        return f"{state_label} [{source_label}] {summary}"
+
+    return f"{state_label} [{source_label}] Alert"
 
 
 def formatslackalert(alert):
@@ -52,7 +64,7 @@ def formatslackalert(alert):
         device=_inline_code(alert.device),
         severity=_inline_code((alert.severity or "").upper()),
         ip_line=_line("IP", _inline_code(alert.ip)),
-        rule_line=_line("Rule", _inline_code(alert.rule)),
+        rule_line=_line("Rule", _inline_code(alert.rule or alert.summary)),
         fired_line=_line("Fired", _inline_code(alert.fired_at)),
         resolved_line=_line("Resolved", _inline_code(alert.resolved_at)),
         downtime_line=_line("Downtime", _inline_code(alert.downtime)),
