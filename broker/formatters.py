@@ -1,77 +1,65 @@
-from broker.mappings import SEVERITY_TO_EMOJI, STATE_LABEL, SOURCE_LABEL
+from broker.mappings import STATE_LABEL, SOURCE_LABEL
 from broker.templates import ALERT_TEMPLATE, DETAILS_TEMPLATE
 
 
-def _code_value(value):
-    """
-    Format values in Slack inline-code style.
+def _line(label: str, value):
+    return f"\n{label}: {value}" if value else ""
 
-    This makes the right-side field values use Slack's code-style font,
-    similar to the native Graylog alert formatting.
-    """
-    if not value:
+
+def _inline_code(value):
+    if value is None:
         return ""
 
-    cleaned = str(value).strip()
+    value = str(value).strip()
 
-    # Treat empty strings and stray formatting characters as empty.
-    if not cleaned or cleaned in ("`", "``", "```"):
+    if not value or value in ("`", "``", "```"):
         return ""
 
-    # Avoid breaking Slack inline-code formatting if the value contains backticks.
-    cleaned = cleaned.replace("`", "'")
+    value = value.replace("`", "'")
 
-    return f"`{cleaned}`"
+    return f"`{value}`"
 
 
-def _line(label: str, value, code: bool = True):
-    if not value:
+def _display(value):
+    if value is None:
         return ""
 
-    rendered_value = _code_value(value) if code else value
+    return str(value).strip()
 
-    if not rendered_value:
-        return ""
 
-    return f"\n{label}: {rendered_value}"
+def _build_header(alert):
+    state_label = STATE_LABEL.get((alert.state or "").lower(), (alert.state or "").upper())
+    source_label = SOURCE_LABEL.get((alert.source or "").lower(), alert.source or "")
+    summary = _display(alert.summary)
+    device = _display(alert.device)
+
+    if device:
+        return f"{state_label} [{source_label}] {summary} - {device}"
+
+    return f"{state_label} [{source_label}] {summary}"
 
 
 def formatslackalert(alert):
-    severity_key = (alert.severity or "").lower()
-    state_key = (alert.state or "").lower()
-
-    emoji = SEVERITY_TO_EMOJI.get(
-        "resolved" if state_key == "resolved" else severity_key,
-        ":red_circle:",
-    )
-    state_label = STATE_LABEL.get(state_key, alert.state.upper())
-    source_label = SOURCE_LABEL.get(alert.source.lower(), alert.source)
-
     details_block = ""
-    coded_details = _code_value(alert.details)
 
-    if coded_details:
-        details_block = DETAILS_TEMPLATE.format(details=coded_details)
+    if alert.details:
+        details = str(alert.details).strip()
+        if details and details not in ("`", "``", "```"):
+            details_block = DETAILS_TEMPLATE.format(details=details)
 
     return ALERT_TEMPLATE.format(
-        emoji=emoji,
-        state_label=state_label,
-        source=source_label,
-        summary=alert.summary,
-
-        # Right-side values formatted as Slack inline code.
-        device=_code_value(alert.device),
-        severity=_code_value(alert.severity.upper()),
-
+        header=_build_header(alert),
+        device=_inline_code(alert.device),
+        severity=_inline_code((alert.severity or "").upper()),
+        ip_line=_line("IP", _inline_code(alert.ip)),
+        rule_line=_line("Rule", _inline_code(alert.rule)),
+        fired_line=_line("Fired", _inline_code(alert.fired_at)),
+        resolved_line=_line("Resolved", _inline_code(alert.resolved_at)),
+        downtime_line=_line("Downtime", _inline_code(alert.downtime)),
         details_block=details_block,
-        ip_line=_line("IP", alert.ip),
-        rule_line=_line("Rule", alert.rule),
-        fired_line=_line("Fired", alert.fired_at),
-        resolved_line=_line("Resolved", alert.resolved_at),
-        downtime_line=_line("Downtime", alert.downtime),
 
-        # Keep links clickable instead of wrapping them in code.
-        link_line=_line("Link", alert.link, code=False),
+        # Keep link clickable and at the bottom.
+        link_line=_line("Link", alert.link),
     )
 
 
