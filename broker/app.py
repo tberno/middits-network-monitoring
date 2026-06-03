@@ -72,7 +72,6 @@ def _first_nonempty(*values):
     """
     Return the first useful value from a list of possible values.
 
-
     This is used mostly for Graylog because different Graylog notification
     templates can send different field names.
     """
@@ -80,14 +79,11 @@ def _first_nonempty(*values):
         if value is None:
             continue
 
-
         cleaned = str(value).strip()
-
 
         # Treat empty strings and stray Slack formatting characters as empty.
         if cleaned and cleaned not in ("`", "``", "```"):
             return cleaned
-
 
     return None
 
@@ -101,22 +97,17 @@ def _first_nonempty(*values):
 def slack_color_for_text(text: str) -> str:
     upper = text.upper()
 
-
     if "RESOLVED" in upper:
         return "good"
-
 
     if "WARNING" in upper or "WARN" in upper:
         return "#ff9900"
 
-
     if "INFO" in upper or "INFORMATIONAL" in upper:
         return "#1f6feb"
 
-
     if "CRITICAL" in upper or "DOWN" in upper:
         return "danger"
-
 
     return "#808080"
 
@@ -131,7 +122,7 @@ def slack_color_for_text(text: str) -> str:
 
 
 def slack_fallback_for_text(text: str) -> str:
-    first_line = text.splitlines()[0].strip() if text else "Network alert"
+    first_line = text.splitlines().strip() if text else "Network alert"
     return first_line or "Network alert"
 
 
@@ -144,10 +135,8 @@ def slack_fallback_for_text(text: str) -> str:
 def slack_attachment_text(text: str) -> str:
     lines = text.splitlines()
 
-
     if len(lines) <= 1:
         return text
-
 
     return "\n".join(lines[1:]).strip()
 
@@ -162,7 +151,6 @@ def load_state() -> dict:
     if not os.path.exists(STATE_FILE):
         return {}
 
-
     try:
         with open(STATE_FILE, "r") as f:
             return json.load(f)
@@ -175,10 +163,8 @@ def load_state() -> dict:
 def save_state(state: dict) -> None:
     state_dir = os.path.dirname(STATE_FILE)
 
-
     if state_dir:
         os.makedirs(state_dir, exist_ok=True)
-
 
     fd, tmp_path = tempfile.mkstemp(
         prefix="slack-state-",
@@ -186,12 +172,10 @@ def save_state(state: dict) -> None:
         dir=state_dir or None,
     )
 
-
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(state, f, indent=2, sort_keys=True)
             f.write("\n")
-
 
         os.replace(tmp_path, STATE_FILE)
     finally:
@@ -204,34 +188,27 @@ def alert_state_key(alert: NormalizedAlert) -> str:
     """
     Build a stable key used to match an alert with its recovery.
 
-
     Important:
         For NMS/LibreNMS, do not use alert_id first. LibreNMS $uid can differ
         between the alert and recovery notification, which causes the recovery
         to post as a new Slack message instead of updating the original.
 
-
     NMS/LibreNMS:
         source + device + rule/summary
-
 
     Other sources:
         source + alert_id when available, otherwise source + device + rule/summary
     """
     source = (alert.source or "unknown").lower()
 
-
     device = str(alert.device or "unknown-device").strip().lower()
     rule = str(alert.rule or alert.summary or alert.event_type or "unknown-rule").strip().lower()
-
 
     if source == "nms":
         return "{}:device:{}:rule:{}".format(source, device, rule)
 
-
     if alert.alert_id:
         return "{}:id:{}".format(source, str(alert.alert_id).strip().lower())
-
 
     return "{}:device:{}:rule:{}".format(source, device, rule)
 
@@ -252,14 +229,11 @@ def build_slack_payload(text: str, channel_id: str) -> dict:
     fallback = slack_fallback_for_text(text)
     attachment_text = slack_attachment_text(text)
 
-
     return {
         "channel": channel_id,
 
-
         # Used by phone/toast notifications.
         "text": fallback,
-
 
         # Visible Slack message body with colored side bar.
         # mrkdwn_in enables Slack formatting/backticks inside attachment text.
@@ -271,7 +245,6 @@ def build_slack_payload(text: str, channel_id: str) -> dict:
                 "mrkdwn_in": ["text", "fallback"],
             }
         ],
-
 
         # Prevent Slack from expanding URLs.
         "unfurl_links": False,
@@ -289,7 +262,6 @@ def slack_api_post(method: str, payload: dict) -> dict:
     if not SLACK_BOT_TOKEN:
         raise RuntimeError("Missing SLACK_BOT_TOKEN")
 
-
     resp = requests.post(
         "https://slack.com/api/{}".format(method),
         headers={
@@ -300,13 +272,10 @@ def slack_api_post(method: str, payload: dict) -> dict:
         timeout=10,
     )
 
-
     data = resp.json()
-
 
     if not data.get("ok"):
         raise RuntimeError("Slack API error from {}: {}".format(method, data))
-
 
     return data
 
@@ -315,7 +284,6 @@ def slack_api_post(method: str, payload: dict) -> dict:
 def post_to_slack(text: str, channel_id: str) -> dict:
     if not channel_id:
         raise RuntimeError("Missing Slack channel ID")
-
 
     payload = build_slack_payload(text, channel_id)
     return slack_api_post("chat.postMessage", payload)
@@ -326,14 +294,11 @@ def update_slack_message(text: str, channel_id: str, ts: str) -> dict:
     if not channel_id:
         raise RuntimeError("Missing Slack channel ID")
 
-
     if not ts:
         raise RuntimeError("Missing Slack message timestamp")
 
-
     payload = build_slack_payload(text, channel_id)
     payload["ts"] = ts
-
 
     return slack_api_post("chat.update", payload)
 
@@ -343,17 +308,14 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
     """
     Send a new Slack message or update the original message on recovery.
 
-
     Returns a small result dict that gets included in the webhook JSON response.
     """
     key = alert_state_key(alert)
     state = load_state()
 
-
     # Recovery path: update original Slack message if we have saved state.
     if is_resolved_alert(alert):
         existing = state.get(key)
-
 
         if existing:
             update_slack_message(
@@ -362,10 +324,8 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
                 ts=existing.get("ts"),
             )
 
-
             state.pop(key, None)
             save_state(state)
-
 
             return {
                 "action": "updated",
@@ -374,10 +334,8 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
                 "ts": existing.get("ts"),
             }
 
-
         # No state was found. Post the recovery as a fallback so it is not lost.
         data = post_to_slack(text, channel_id)
-
 
         return {
             "action": "posted_resolved_without_state",
@@ -386,17 +344,14 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
             "ts": data.get("ts"),
         }
 
-
     # Alert path: post a new Slack message and save Slack channel/ts.
     data = post_to_slack(text, channel_id)
-
 
     state[key] = {
         "channel": data.get("channel") or channel_id,
         "ts": data.get("ts"),
     }
     save_state(state)
-
 
     return {
         "action": "posted",
@@ -419,7 +374,6 @@ def _combined_payload_text(source: str, payload: dict, text: str) -> str:
         if value is not None
     )
 
-
     return "{} {} {}".format(source or "", text or "", payload_values).lower()
 
 
@@ -433,11 +387,9 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
     source_key = (source or "").lower()
     combined = _combined_payload_text(source_key, payload, text)
 
-
     # NMS and Graylog are network/switch/server style alerts.
     if source_key in ("nms", "graylog"):
         return SLACK_NMS_CHANNEL_ID
-
 
     # Mist can produce both WiFi/AP alerts and switch/gateway alerts.
     if source_key == "mist":
@@ -458,7 +410,6 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
             "device restarted",
         ]
 
-
         switch_terms = [
             "switch",
             "switch_down",
@@ -473,20 +424,16 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
             "fabric-core",
         ]
 
-
         # If it clearly looks like a switch/network event, send to NMS alerts.
         if any(term in combined for term in switch_terms):
             return SLACK_NMS_CHANNEL_ID
-
 
         # If it clearly looks like a WiFi/AP/client event, send to WiFi alerts.
         if any(term in combined for term in wifi_terms):
             return SLACK_WIFI_CHANNEL_ID
 
-
         # Default Mist to WiFi unless it clearly matches switch/network terms.
         return SLACK_WIFI_CHANNEL_ID
-
 
     # Unknown sources go to the default channel.
     return SLACK_CHANNEL_ID
@@ -502,11 +449,9 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
     """
     Convert Graylog JSON into the common NormalizedAlert shape.
 
-
     Graylog notification templates vary a lot. This tries several common field
     names so we do not end up with unknown-device or empty details when Graylog
     sends event-specific keys.
-
 
     EfficientIP/DHCP payloads use: dhcp_network, dhcp_server_ip, alert_summary,
     alert_type, dhcp_normalized_message.
@@ -536,7 +481,6 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("dhcp_server_ip"),
     ) or "unknown-device"
 
-
     summary = _first_nonempty(
         payload.get("summary"),
         payload.get("title"),
@@ -550,8 +494,8 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("alert_type"),
     ) or "Graylog alert"
 
-
-    details = _first_nonempty(
+    # Build base details from standard fields, falling back to DHCP message.
+    _base_details = _first_nonempty(
         payload.get("details"),
         payload.get("message"),
         payload.get("event_message"),
@@ -563,13 +507,23 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("dhcp_normalized_message"),
     ) or ""
 
+    # Append resolved subnet CIDR to details so scope exhaustion alerts
+    # show the actual network range, not just the pool name.
+    _subnet = payload.get("dhcp_subnet")
+    _network = payload.get("dhcp_network")
+
+    if _subnet and _network and _subnet != _network:
+        details = "{}\nSubnet: {} ({})".format(_base_details, _subnet, _network)
+    elif _subnet:
+        details = "{}\nSubnet: {}".format(_base_details, _subnet)
+    else:
+        details = _base_details
 
     severity = _first_nonempty(
         payload.get("severity"),
         payload.get("priority"),
         payload.get("event_priority"),
     ) or "critical"
-
 
     severity_map = {
         "1": "critical",
@@ -579,9 +533,7 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         "5": "info",
     }
 
-
     severity = severity_map.get(str(severity).lower(), str(severity))
-
 
     return NormalizedAlert(
         source="graylog",
@@ -608,15 +560,12 @@ def is_ip_like(value: str) -> bool:
     if not value:
         return False
 
-
     value = str(value).strip()
-
 
     # Simple IPv4 check. This is enough for deciding display name vs IP.
     parts = value.split(".")
     if len(parts) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
         return True
-
 
     return False
 
@@ -625,7 +574,6 @@ def is_ip_like(value: str) -> bool:
 def best_device_name(payload: dict) -> str:
     """
     Pick the best display name for an NMS/LibreNMS alert.
-
 
     LibreNMS can sometimes send hostname as an IP address. Prefer sysName/sysname
     when present, then hostname if it is not just an IP, then device/name, then IP.
@@ -638,18 +586,15 @@ def best_device_name(payload: dict) -> str:
         payload.get("name"),
     ]
 
-
     # First pass: prefer real names over IP addresses.
     for value in candidates:
         if value and not is_ip_like(value):
             return str(value).strip()
 
-
     # Second pass: allow IP if that is all we have.
     for value in candidates:
         if value:
             return str(value).strip()
-
 
     return payload.get("ip") or "unknown-device"
 
@@ -664,21 +609,16 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
     state_value = payload.get("state")
     state = "alert" if str(state_value) == "1" else "resolved"
 
-
     summary = payload.get("name") or payload.get("rule") or payload.get("title") or "NMS alert"
-
 
     faults = payload.get("faults") or []
     fault_lines = []
-
 
     for fault in faults:
         if isinstance(fault, dict) and fault.get("string"):
             fault_lines.append(fault["string"])
 
-
     details = "\n".join(fault_lines) if fault_lines else payload.get("details", "")
-
 
     return NormalizedAlert(
         source="nms",
@@ -735,10 +675,8 @@ def normalize_and_render_alert(source: str, payload: dict):
         "mist": normalize_mist,
     }
 
-
     alert = normalizers[source](payload)
     text = format_slack_alert(alert)
-
 
     return alert, text
 
@@ -765,7 +703,6 @@ def process_webhook(source: str, payload: dict):
     channel_id = slack_channel_for_alert(source, payload, text)
     slack_result = send_or_update_slack(alert, text, channel_id)
 
-
     return jsonify({
         "ok": True,
         "source": source,
@@ -786,6 +723,7 @@ def process_webhook(source: str, payload: dict):
 @app.post("/webhook/graylog")
 def webhook_graylog():
     payload = request.get_json(silent=True) or {}
+    app.logger.info("GRAYLOG RAW PAYLOAD: %s", json.dumps(payload, default=str))
     return process_webhook("graylog", payload)
 
 
