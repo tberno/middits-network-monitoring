@@ -414,6 +414,9 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
     Graylog notification templates vary a lot. This tries several common field
     names so we do not end up with unknown-device or empty details when Graylog
     sends event-specific keys.
+
+    EfficientIP/DHCP payloads use: dhcp_network, dhcp_server_ip, alert_summary,
+    alert_type, dhcp_normalized_message.
     """
     device = _first_nonempty(
         payload.get("device"),
@@ -425,6 +428,9 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("gl2_source_input"),
         payload.get("gl2_source_node"),
         payload.get("origin"),
+        # EfficientIP / DHCP
+        payload.get("dhcp_network"),
+        payload.get("dhcp_server_ip"),
     ) or "unknown-device"
 
     summary = _first_nonempty(
@@ -435,6 +441,9 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("eventtype"),
         payload.get("event_type"),
         payload.get("alert_title"),
+        # EfficientIP / DHCP
+        payload.get("alert_summary"),
+        payload.get("alert_type"),
     ) or "Graylog alert"
 
     details = _first_nonempty(
@@ -445,6 +454,8 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("alert_description"),
         payload.get("backlog_message"),
         payload.get("fields.message"),
+        # EfficientIP / DHCP
+        payload.get("dhcp_normalized_message"),
     ) or ""
 
     severity = _first_nonempty(
@@ -453,7 +464,6 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         payload.get("event_priority"),
     ) or "critical"
 
-    # Graylog priority is often numeric. Normalize common values.
     severity_map = {
         "1": "critical",
         "2": "critical",
@@ -466,7 +476,7 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
 
     return NormalizedAlert(
         source="graylog",
-        event_type=payload.get("eventtype") or payload.get("event_type") or "graylog-event",
+        event_type=payload.get("eventtype") or payload.get("event_type") or payload.get("alert_type") or "graylog-event",
         state=payload.get("state", "alert"),
         severity=severity,
         device=device,
@@ -478,7 +488,6 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         link=payload.get("link") or payload.get("url"),
         metadata=payload,
     )
-
 
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS helper functions
