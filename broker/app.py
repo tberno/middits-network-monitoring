@@ -1,7 +1,6 @@
 """
 Alert Broker Flask App
 
-
 Purpose:
     Receives alerts from NMS/LibreNMS, Graylog, and Mist.
     Normalizes those source-specific payloads into a common NormalizedAlert.
@@ -10,7 +9,6 @@ Purpose:
     Sends new alerts to Slack using chat.postMessage.
     Updates existing Slack messages on recovery using chat.update.
 
-
 Main endpoints:
     GET  /health
     POST /webhook/nms
@@ -18,55 +16,41 @@ Main endpoints:
     POST /webhook/mist
 """
 
-
 from flask import Flask, jsonify, request
 import json
 import os
 import requests
 import tempfile
 
-
 from broker.models import NormalizedAlert
 from broker.formatters import format_slack_alert
 from eip_enrich import enrich_dhcp_message
-
-
 
 # -----------------------------------------------------------------------------
 # Flask app
 # -----------------------------------------------------------------------------
 
-
 app = Flask(__name__)
-
-
 
 # -----------------------------------------------------------------------------
 # Slack configuration
 # -----------------------------------------------------------------------------
 
-
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-
 
 # Default/fallback channel.
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
-
 
 # Specific destinations. If a specific variable is missing, fall back to default.
 SLACK_NMS_CHANNEL_ID = os.getenv("SLACK_NMS_CHANNEL_ID") or SLACK_CHANNEL_ID
 SLACK_WIFI_CHANNEL_ID = os.getenv("SLACK_WIFI_CHANNEL_ID") or SLACK_CHANNEL_ID
 
-
 # Slack message state file. This stores alert keys -> Slack channel/timestamp.
 STATE_FILE = os.getenv("STATEFILE") or "/var/lib/alert-broker/slack-state.json"
-
-
 
 # -----------------------------------------------------------------------------
 # General helpers
 # -----------------------------------------------------------------------------
-
 
 def _first_nonempty(*values):
     """
@@ -87,12 +71,9 @@ def _first_nonempty(*values):
 
     return None
 
-
-
 # -----------------------------------------------------------------------------
 # Slack color selection
 # -----------------------------------------------------------------------------
-
 
 def slack_color_for_text(text: str) -> str:
     upper = text.upper()
@@ -111,8 +92,6 @@ def slack_color_for_text(text: str) -> str:
 
     return "#808080"
 
-
-
 # -----------------------------------------------------------------------------
 # Slack notification / fallback text
 #
@@ -120,17 +99,13 @@ def slack_color_for_text(text: str) -> str:
 # notifications use. Keep this simple: just the first rendered line.
 # -----------------------------------------------------------------------------
 
-
 def slack_fallback_for_text(text: str) -> str:
     first_line = text.splitlines().strip() if text else "Network alert"
     return first_line or "Network alert"
 
-
-
 # -----------------------------------------------------------------------------
 # Slack attachment body
 # -----------------------------------------------------------------------------
-
 
 def slack_attachment_text(text: str) -> str:
     lines = text.splitlines()
@@ -140,12 +115,9 @@ def slack_attachment_text(text: str) -> str:
 
     return "\n".join(lines[1:]).strip()
 
-
-
 # -----------------------------------------------------------------------------
 # Slack state storage
 # -----------------------------------------------------------------------------
-
 
 def load_state() -> dict:
     if not os.path.exists(STATE_FILE):
@@ -157,8 +129,6 @@ def load_state() -> dict:
     except Exception:
         # If the state file is corrupt/unreadable, do not crash alert delivery.
         return {}
-
-
 
 def save_state(state: dict) -> None:
     state_dir = os.path.dirname(STATE_FILE)
@@ -181,8 +151,6 @@ def save_state(state: dict) -> None:
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
-
-
 
 def alert_state_key(alert: NormalizedAlert) -> str:
     """
@@ -212,17 +180,12 @@ def alert_state_key(alert: NormalizedAlert) -> str:
 
     return "{}:device:{}:rule:{}".format(source, device, rule)
 
-
-
 def is_resolved_alert(alert: NormalizedAlert) -> bool:
     return str(alert.state or "").lower() == "resolved"
-
-
 
 # -----------------------------------------------------------------------------
 # Slack payload builder
 # -----------------------------------------------------------------------------
-
 
 def build_slack_payload(text: str, channel_id: str) -> dict:
     color = slack_color_for_text(text)
@@ -251,19 +214,16 @@ def build_slack_payload(text: str, channel_id: str) -> dict:
         "unfurl_media": False,
     }
 
-
-
 # -----------------------------------------------------------------------------
 # Slack API helpers
 # -----------------------------------------------------------------------------
-
 
 def slack_api_post(method: str, payload: dict) -> dict:
     if not SLACK_BOT_TOKEN:
         raise RuntimeError("Missing SLACK_BOT_TOKEN")
 
     resp = requests.post(
-        "https://slack.com/api/{}".format(method),
+        "[https://slack.com/api/](https://slack.com/api/){}".format(method),
         headers={
             "Authorization": "Bearer {}".format(SLACK_BOT_TOKEN),
             "Content-Type": "application/json; charset=utf-8",
@@ -279,16 +239,12 @@ def slack_api_post(method: str, payload: dict) -> dict:
 
     return data
 
-
-
 def post_to_slack(text: str, channel_id: str) -> dict:
     if not channel_id:
         raise RuntimeError("Missing Slack channel ID")
 
     payload = build_slack_payload(text, channel_id)
     return slack_api_post("chat.postMessage", payload)
-
-
 
 def update_slack_message(text: str, channel_id: str, ts: str) -> dict:
     if not channel_id:
@@ -301,8 +257,6 @@ def update_slack_message(text: str, channel_id: str, ts: str) -> dict:
     payload["ts"] = ts
 
     return slack_api_post("chat.update", payload)
-
-
 
 def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> dict:
     """
@@ -360,12 +314,9 @@ def send_or_update_slack(alert: NormalizedAlert, text: str, channel_id: str) -> 
         "ts": state[key]["ts"],
     }
 
-
-
 # -----------------------------------------------------------------------------
 # Routing helper
 # -----------------------------------------------------------------------------
-
 
 def _combined_payload_text(source: str, payload: dict, text: str) -> str:
     payload_values = " ".join(
@@ -376,12 +327,9 @@ def _combined_payload_text(source: str, payload: dict, text: str) -> str:
 
     return "{} {} {}".format(source or "", text or "", payload_values).lower()
 
-
-
 # -----------------------------------------------------------------------------
 # Slack channel routing
 # -----------------------------------------------------------------------------
-
 
 def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
     source_key = (source or "").lower()
@@ -438,12 +386,9 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
     # Unknown sources go to the default channel.
     return SLACK_CHANNEL_ID
 
-
-
 # -----------------------------------------------------------------------------
 # Graylog normalizer
 # -----------------------------------------------------------------------------
-
 
 def normalize_graylog(payload: dict) -> NormalizedAlert:
     """
@@ -543,6 +488,7 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         device=device,
         summary=summary,
         details=details,
+        ip=payload.get("dhcp_subnet"),
         alert_id=payload.get("alertid") or payload.get("id") or payload.get("event_id"),
         fired_at=payload.get("firedat") or payload.get("timestamp") or payload.get("event_timestamp"),
         resolved_at=payload.get("resolvedat"),
@@ -550,11 +496,9 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
         metadata=payload,
     )
 
-
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS helper functions
 # -----------------------------------------------------------------------------
-
 
 def is_ip_like(value: str) -> bool:
     if not value:
@@ -568,8 +512,6 @@ def is_ip_like(value: str) -> bool:
         return True
 
     return False
-
-
 
 def best_device_name(payload: dict) -> str:
     """
@@ -598,12 +540,9 @@ def best_device_name(payload: dict) -> str:
 
     return payload.get("ip") or "unknown-device"
 
-
-
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS normalizer
 # -----------------------------------------------------------------------------
-
 
 def normalize_nms(payload: dict) -> NormalizedAlert:
     state_value = payload.get("state")
@@ -638,12 +577,9 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
         metadata=payload,
     )
 
-
-
 # -----------------------------------------------------------------------------
 # Mist normalizer
 # -----------------------------------------------------------------------------
-
 
 def normalize_mist(payload: dict) -> NormalizedAlert:
     return NormalizedAlert(
@@ -661,12 +597,9 @@ def normalize_mist(payload: dict) -> NormalizedAlert:
         metadata=payload,
     )
 
-
-
 # -----------------------------------------------------------------------------
 # Alert normalizer/renderer
 # -----------------------------------------------------------------------------
-
 
 def normalize_and_render_alert(source: str, payload: dict):
     normalizers = {
@@ -680,23 +613,17 @@ def normalize_and_render_alert(source: str, payload: dict):
 
     return alert, text
 
-
-
 # -----------------------------------------------------------------------------
 # Health endpoint
 # -----------------------------------------------------------------------------
-
 
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"}), 200
 
-
-
 # -----------------------------------------------------------------------------
 # Shared webhook processor
 # -----------------------------------------------------------------------------
-
 
 def process_webhook(source: str, payload: dict):
     alert, text = normalize_and_render_alert(source, payload)
@@ -713,12 +640,9 @@ def process_webhook(source: str, payload: dict):
         "text": text,
     }), 200
 
-
-
 # -----------------------------------------------------------------------------
 # Graylog webhook
 # -----------------------------------------------------------------------------
-
 
 @app.post("/webhook/graylog")
 def webhook_graylog():
@@ -726,36 +650,27 @@ def webhook_graylog():
     app.logger.info("GRAYLOG RAW PAYLOAD: %s", json.dumps(payload, default=str))
     return process_webhook("graylog", payload)
 
-
-
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS webhook
 # -----------------------------------------------------------------------------
-
 
 @app.post("/webhook/nms")
 def webhook_nms():
     payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
     return process_webhook("nms", payload)
 
-
-
 # -----------------------------------------------------------------------------
 # Mist webhook
 # -----------------------------------------------------------------------------
-
 
 @app.post("/webhook/mist")
 def webhook_mist():
     payload = request.get_json(silent=True) or {}
     return process_webhook("mist", payload)
 
-
-
 # -----------------------------------------------------------------------------
 # Local development entry point
 # -----------------------------------------------------------------------------
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5051, debug=False)
