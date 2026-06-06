@@ -100,7 +100,7 @@ def slack_color_for_text(text: str) -> str:
 # -----------------------------------------------------------------------------
 
 def slack_fallback_for_text(text: str) -> str:
-    first_line = text.splitlines().strip() if text else "Network alert"
+    first_line = text.splitlines()[0].strip() if text else "Network alert"
     return first_line or "Network alert"
 
 # -----------------------------------------------------------------------------
