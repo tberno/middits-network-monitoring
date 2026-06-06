@@ -223,7 +223,7 @@ def slack_api_post(method: str, payload: dict) -> dict:
         raise RuntimeError("Missing SLACK_BOT_TOKEN")
 
     resp = requests.post(
-        "[https://slack.com/api/](https://slack.com/api/){}".format(method),
+        "https://slack.com/api/{}".format(method),
         headers={
             "Authorization": "Bearer {}".format(SLACK_BOT_TOKEN),
             "Content-Type": "application/json; charset=utf-8",
