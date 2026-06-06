@@ -24,7 +24,7 @@ import tempfile
 
 from broker.models import NormalizedAlert
 from broker.formatters import format_slack_alert
-from eip_enrich import enrich_dhcp_message
+from broker.eip_enrich import enrich_dhcp_message
 
 # -----------------------------------------------------------------------------
 # Flask app

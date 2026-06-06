@@ -9,7 +9,7 @@ EIP_HOST = "https://juno-eip.middlebury.edu"
 EIP_USER = os.getenv("EIP_USER", "slack_api")
 EIP_PASS = os.getenv("EIP_PASS")
 
-def get_subnet_for_network(dhcp_name: str) -> str | None:
+def get_subnet_for_network(dhcp_name: str):
     """Queries the EfficientIP API to find the subnet CIDR for a given DHCP network name."""
     if not EIP_PASS:
         print("Warning: EIP_PASS environment variable is not set.")
