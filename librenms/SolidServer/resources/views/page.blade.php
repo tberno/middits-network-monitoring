@@ -47,10 +47,14 @@
                 <th>Ranges</th>
                 <th>HA duplicates</th>
                 <th>DHCP source</th>
+                <th>Details</th>
             </tr>
         </thead>
         <tbody>
             @forelse ($shared_networks as $network)
+                @php
+                    $detail_id = 'solidserver-network-' . md5($network['name']);
+                @endphp
                 <tr>
                     <td>
                         @if ($network['state'] === 'critical')
@@ -83,10 +87,59 @@
                     <td>{{ $network['range_count'] }}</td>
                     <td>{{ $network['duplicate_range_count'] }}</td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
+                    <td>
+                        <button class="btn btn-xs btn-default" type="button" data-toggle="collapse" data-target="#{{ $detail_id }}">
+                            Ranges
+                        </button>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="10">
+                        <div class="collapse" id="{{ $detail_id }}">
+                            <table class="table table-condensed">
+                                <thead>
+                                    <tr>
+                                        <th>Range</th>
+                                        <th>Scope</th>
+                                        <th>Used</th>
+                                        <th>Total</th>
+                                        <th>Free</th>
+                                        <th>Lease %</th>
+                                        <th>State</th>
+                                        <th>HA duplicates</th>
+                                        <th>Failover</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($network['ranges'] as $range)
+                                        <tr>
+                                            <td>
+                                                @if ($range['start'] || $range['end'])
+                                                    {{ $range['start'] }} - {{ $range['end'] }}
+                                                @else
+                                                    {{ $range['name'] }}
+                                                @endif
+                                            </td>
+                                            <td>{{ $range['scope'] }}</td>
+                                            <td>{{ $range['used'] !== null ? number_format($range['used']) : 'unknown' }}</td>
+                                            <td>{{ $range['total'] !== null ? number_format($range['total']) : 'unknown' }}</td>
+                                            <td>{{ $range['free'] !== null ? number_format($range['free']) : 'unknown' }}</td>
+                                            <td>{{ $range['lease_percent'] !== null ? number_format($range['lease_percent'], 2) . '%' : 'unknown' }}</td>
+                                            <td>{{ $range['state'] }}</td>
+                                            <td>{{ $range['duplicate_count'] }}</td>
+                                            <td>{{ $range['failover'] }}</td>
+                                            <td>{{ implode(', ', $range['servers']) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9">No DHCP shared network data returned.</td>
+                    <td colspan="10">No DHCP shared network data returned.</td>
                 </tr>
             @endforelse
         </tbody>

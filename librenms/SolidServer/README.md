@@ -35,6 +35,8 @@ Then enable it from the LibreNMS plugin admin page and configure:
   source names.
 - Tracks skipped HA duplicate rows so the operator can tell when failover data
   was present but not double-counted.
+- Provides per-shared-network drilldown into underlying ranges, lease counts,
+  failover names, and DHCP sources.
 
 ## What this plugin does not do
 

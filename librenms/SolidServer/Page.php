@@ -124,6 +124,7 @@ class Page extends PageHook
     {
         $networks = [];
         $seenRanges = [];
+        $rangeIndexes = [];
 
         foreach ($ranges as $range) {
             $name = trim((string) ($range['dhcpsn_name'] ?? $range['shared_network'] ?? $range['dhcpscope_name'] ?? 'unknown'));
@@ -145,6 +146,7 @@ class Page extends PageHook
                     'id' => $id,
                     'name' => $name,
                     'range_count' => 0,
+                    'ranges' => [],
                     'servers' => [],
                     'state' => 'unknown',
                     'total' => 0,
@@ -161,6 +163,13 @@ class Page extends PageHook
 
             if (isset($seenRanges[$rangeKey])) {
                 $networks[$key]['duplicate_range_count']++;
+                if (isset($rangeIndexes[$rangeKey])) {
+                    $rangeIndex = $rangeIndexes[$rangeKey];
+                    $networks[$key]['ranges'][$rangeIndex]['duplicate_count']++;
+                    if ($server !== '') {
+                        $networks[$key]['ranges'][$rangeIndex]['servers'][$server] = true;
+                    }
+                }
                 continue;
             }
 
@@ -186,16 +195,45 @@ class Page extends PageHook
                 $networks[$key]['free'] += $free;
                 $networks[$key]['range_count']++;
             }
+
+            $rangeIndex = count($networks[$key]['ranges']);
+            $rangeIndexes[$rangeKey] = $rangeIndex;
+            $networks[$key]['ranges'][] = [
+                'duplicate_count' => 0,
+                'end' => $range['dhcprange_end_addr'] ?? '',
+                'failover' => $range['dhcprange_failover_name'] ?? '',
+                'free' => $free,
+                'lease_percent' => $this->firstNumber($range, ['dhcprange_lease_percent', 'lease_percent']),
+                'name' => $range['dhcprange_name'] ?? '',
+                'scope' => $range['dhcpscope_name'] ?? '',
+                'servers' => $server !== '' ? [$server => true] : [],
+                'start' => $range['dhcprange_start_addr'] ?? '',
+                'state' => $range['dhcprange_state'] ?? '',
+                'total' => $total,
+                'used' => $used,
+            ];
         }
 
         foreach ($networks as &$network) {
             if ($network['total'] <= 0) {
+                $network['servers'] = array_keys($network['servers']);
+                foreach ($network['ranges'] as &$range) {
+                    $range['servers'] = array_keys($range['servers']);
+                }
+                unset($range);
                 continue;
             }
 
             $network['free_percent'] = ($network['free'] / $network['total']) * 100;
             $network['used_percent'] = ($network['used'] / $network['total']) * 100;
             $network['servers'] = array_keys($network['servers']);
+            foreach ($network['ranges'] as &$range) {
+                $range['servers'] = array_keys($range['servers']);
+                if ($range['lease_percent'] === null && $range['total'] && $range['used'] !== null) {
+                    $range['lease_percent'] = ($range['used'] / $range['total']) * 100;
+                }
+            }
+            unset($range);
 
             if ($network['free_percent'] <= $critical) {
                 $network['state'] = 'critical';
