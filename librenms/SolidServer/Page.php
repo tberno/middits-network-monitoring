@@ -23,12 +23,14 @@ class Page extends PageHook
 
         $error = null;
         $sharedNetworks = [];
+        $rawRangeCount = 0;
 
         if ($username === '' || $password === '') {
             $error = 'Solid Server credentials are not configured.';
         } else {
             try {
                 $ranges = $this->fetchRows($baseUrl, '/rest/dhcp_range_list', $username, $password, $verifyTls);
+                $rawRangeCount = count($ranges);
                 $sharedNetworks = $this->aggregateSharedNetworks($ranges, $warning, $critical);
             } catch (\Throwable $exception) {
                 $error = $exception->getMessage();
@@ -39,7 +41,10 @@ class Page extends PageHook
             'base_url' => $baseUrl,
             'critical' => $critical,
             'error' => $error,
+            'fetched_at' => date('Y-m-d H:i:s'),
+            'raw_range_count' => $rawRangeCount,
             'shared_networks' => $sharedNetworks,
+            'summary' => $this->summary($sharedNetworks),
             'warning' => $warning,
         ];
     }
@@ -131,26 +136,35 @@ class Page extends PageHook
                 $range['dhcprange_name'] ?? '',
             ]);
 
-            if (isset($seenRanges[$rangeKey])) {
-                continue;
-            }
-
-            $seenRanges[$rangeKey] = true;
-
             if (!isset($networks[$key])) {
                 $networks[$key] = [
                     'critical' => $critical,
+                    'duplicate_range_count' => 0,
                     'free' => 0,
                     'free_percent' => null,
                     'id' => $id,
                     'name' => $name,
                     'range_count' => 0,
+                    'servers' => [],
                     'state' => 'unknown',
                     'total' => 0,
                     'used' => 0,
+                    'used_percent' => null,
                     'warning' => $warning,
                 ];
             }
+
+            $server = trim((string) ($range['vdhcp_parent_name'] ?? $range['dhcp_name'] ?? $range['hostaddr'] ?? ''));
+            if ($server !== '') {
+                $networks[$key]['servers'][$server] = true;
+            }
+
+            if (isset($seenRanges[$rangeKey])) {
+                $networks[$key]['duplicate_range_count']++;
+                continue;
+            }
+
+            $seenRanges[$rangeKey] = true;
 
             $total = $this->firstNumber($range, ['dhcpscope_size', 'dhcpscope_total', 'dhcprange_size', 'total', 'size']);
             $used = $this->firstNumber($range, ['dhcpscope_used', 'dhcpscope_addr_used', 'dhcprange_used', 'dhcprange_lease_count', 'used', 'leases_used']);
@@ -180,6 +194,9 @@ class Page extends PageHook
             }
 
             $network['free_percent'] = ($network['free'] / $network['total']) * 100;
+            $network['used_percent'] = ($network['used'] / $network['total']) * 100;
+            $network['servers'] = array_keys($network['servers']);
+
             if ($network['free_percent'] <= $critical) {
                 $network['state'] = 'critical';
             } elseif ($network['free_percent'] <= $warning) {
@@ -192,6 +209,28 @@ class Page extends PageHook
         usort($networks, fn ($a, $b) => ($a['free_percent'] ?? 999) <=> ($b['free_percent'] ?? 999));
 
         return $networks;
+    }
+
+    private function summary(array $networks): array
+    {
+        $summary = [
+            'critical' => 0,
+            'ok' => 0,
+            'total' => count($networks),
+            'unknown' => 0,
+            'warning' => 0,
+        ];
+
+        foreach ($networks as $network) {
+            $state = $network['state'] ?? 'unknown';
+            if (!isset($summary[$state])) {
+                $state = 'unknown';
+            }
+
+            $summary[$state]++;
+        }
+
+        return $summary;
     }
 
     private function firstNumber(array $row, array $keys): ?float

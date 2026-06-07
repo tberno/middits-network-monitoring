@@ -26,10 +26,15 @@ Then enable it from the LibreNMS plugin admin page and configure:
 ## What this plugin does
 
 - Pulls `/rest/dhcp_range_list` from Solid Server.
-- Groups ranges by `dhcpsn_id` / `dhcpsn_name`.
+- Groups ranges by shared-network name.
+- Deduplicates HA/failover duplicate rows by shared-network name plus range
+  start/end/name.
 - Calculates aggregate free, used, total, and free percentage per shared
   network.
-- Shows the lowest-free shared networks first.
+- Shows the lowest-free shared networks first with state summaries and DHCP
+  source names.
+- Tracks skipped HA duplicate rows so the operator can tell when failover data
+  was present but not double-counted.
 
 ## What this plugin does not do
 
