@@ -20,6 +20,18 @@
         .solidserver-toolbar .form-control {
             max-width: 320px;
         }
+        .solidserver-lookup {
+            margin: 10px 0 14px;
+        }
+        .solidserver-lookup .form-control {
+            max-width: 360px;
+        }
+        .solidserver-lookup-result {
+            margin-top: 10px;
+        }
+        .solidserver-lookup-result table {
+            margin-bottom: 8px;
+        }
         .solidserver-capacity {
             min-width: 150px;
         }
@@ -69,6 +81,120 @@
                 Shared networks
             </div>
         </div>
+    </div>
+
+    <div class="well well-sm solidserver-lookup">
+        <form class="form-inline" method="GET">
+            <div class="form-group">
+                <label for="solidserver-lookup">DHCP / IP lookup</label>
+                <input class="form-control input-sm" id="solidserver-lookup" name="lookup" placeholder="IP, MAC, hostname, or reservation" value="{{ $lookup_query }}">
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">Lookup</button>
+            @if ($lookup_query !== '')
+                <a class="btn btn-sm btn-default" href="{{ request()->url() }}">Clear</a>
+            @endif
+            <span class="text-muted">Read-only lookup; no reservation changes are made.</span>
+        </form>
+
+        @if ($lookup)
+            <div class="solidserver-lookup-result">
+                <h4>Lookup: {{ $lookup['query'] }} <small>{{ strtoupper($lookup['type']) }}</small></h4>
+
+                @if ($lookup['range_matches'])
+                    <h5>Matching DHCP ranges</h5>
+                    <table class="table table-condensed table-striped">
+                        <thead>
+                            <tr>
+                                <th>Shared network</th>
+                                <th>VLAN</th>
+                                <th>Range</th>
+                                <th>Scope</th>
+                                <th>Used</th>
+                                <th>Total</th>
+                                <th>Lease %</th>
+                                <th>State</th>
+                                <th>Failover</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($lookup['range_matches'] as $match)
+                                <tr>
+                                    <td>{{ $match['shared_network'] }}</td>
+                                    <td>
+                                        @if ($match['vlan'])
+                                            <span class="label label-primary">VLAN {{ $match['vlan'] }}</span>
+                                        @else
+                                            <span class="text-muted">unknown</span>
+                                        @endif
+                                    </td>
+                                    <td>{{ $match['start'] }} - {{ $match['end'] }}</td>
+                                    <td>{{ $match['scope'] }}</td>
+                                    <td>{{ $match['used'] !== null ? number_format($match['used']) : 'unknown' }}</td>
+                                    <td>{{ $match['total'] !== null ? number_format($match['total']) : 'unknown' }}</td>
+                                    <td>{{ $match['lease_percent'] !== null ? number_format($match['lease_percent'], 2) . '%' : 'unknown' }}</td>
+                                    <td>{{ $match['state'] }}</td>
+                                    <td>{{ $match['failover'] }}</td>
+                                    <td>{{ $match['server'] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @elseif ($lookup['type'] === 'ip')
+                    <div class="alert alert-warning">No DHCP range contains this IP in the current Solid Server range data.</div>
+                @endif
+
+                @if ($lookup['api_results'])
+                    <h5>Solid Server records</h5>
+                    <table class="table table-condensed table-striped">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Summary</th>
+                                <th>Fields</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($lookup['api_results'] as $result)
+                                <tr>
+                                    <td>{{ $result['label'] }}</td>
+                                    <td>{{ $result['summary'] }}</td>
+                                    <td>
+                                        @foreach ($result['row'] as $field => $value)
+                                            <span class="label label-default">{{ $field }}={{ $value }}</span>
+                                        @endforeach
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @else
+                    <div class="alert alert-info">No lease, reservation, IPAM, or DNS records were returned by the read-only lookup endpoints.</div>
+                @endif
+
+                @if ($lookup['errors'])
+                    <details>
+                        <summary>Endpoint notes</summary>
+                        <table class="table table-condensed">
+                            <thead>
+                                <tr>
+                                    <th>Endpoint</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($lookup['errors'] as $error)
+                                    <tr>
+                                        <td>{{ $error['endpoint'] }}</td>
+                                        <td>{{ $error['message'] }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </details>
+                @endif
+            </div>
+        @endif
     </div>
 
     <div class="solidserver-toolbar">

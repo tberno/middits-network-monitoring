@@ -39,12 +39,17 @@ Then enable it from the LibreNMS plugin admin page and configure:
   failover names, and DHCP sources.
 - Shows corresponding VLANs when Solid Server returns an explicit VLAN field or
   when a VLAN can be parsed from names such as `Vlan 113`.
+- Provides a read-only DHCP/IP lookup panel for IP, MAC, hostname, or
+  reservation-style searches. IP searches always map to the containing DHCP
+  range from `/rest/dhcp_range_list` and then try read-only lease, reservation,
+  IPAM, and DNS record endpoints for richer details.
 
 ## What this plugin does not do
 
 - It does not write to Solid Server.
 - It does not change DHCP, DNS, scopes, ranges, reservations, or shared
   networks.
+- It does not create, edit, or delete reservations.
 - It does not send Slack messages directly.
 
 ## Alerting note

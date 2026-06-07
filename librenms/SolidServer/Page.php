@@ -22,6 +22,8 @@ class Page extends PageHook
         $verifyTls = (bool) ($settings['verify_tls'] ?? true);
 
         $error = null;
+        $lookup = null;
+        $lookupQuery = trim((string) request()->query('lookup', ''));
         $sharedNetworks = [];
         $rawRangeCount = 0;
 
@@ -32,6 +34,9 @@ class Page extends PageHook
                 $ranges = $this->fetchRows($baseUrl, '/rest/dhcp_range_list', $username, $password, $verifyTls);
                 $rawRangeCount = count($ranges);
                 $sharedNetworks = $this->aggregateSharedNetworks($ranges, $warning, $critical);
+                if ($lookupQuery !== '') {
+                    $lookup = $this->lookupSolidServer($baseUrl, $username, $password, $verifyTls, $ranges, $lookupQuery);
+                }
             } catch (\Throwable $exception) {
                 $error = $exception->getMessage();
             }
@@ -42,6 +47,8 @@ class Page extends PageHook
             'critical' => $critical,
             'error' => $error,
             'fetched_at' => date('Y-m-d H:i:s'),
+            'lookup' => $lookup,
+            'lookup_query' => $lookupQuery,
             'raw_range_count' => $rawRangeCount,
             'shared_networks' => $sharedNetworks,
             'summary' => $this->summary($sharedNetworks),
@@ -49,7 +56,7 @@ class Page extends PageHook
         ];
     }
 
-    private function fetchRows(string $baseUrl, string $endpoint, string $username, string $password, bool $verifyTls): array
+    private function fetchRows(string $baseUrl, string $endpoint, string $username, string $password, bool $verifyTls, ?string $where = null, int $maxRows = 5000): array
     {
         // Read-only by design: this plugin only performs GET/list requests.
         $rows = [];
@@ -57,10 +64,15 @@ class Page extends PageHook
         $offset = 0;
 
         do {
-            $url = $baseUrl . $endpoint . '?' . http_build_query([
+            $params = [
                 'limit' => $limit,
                 'offset' => $offset,
-            ]);
+            ];
+            if ($where !== null && $where !== '') {
+                $params['WHERE'] = $where;
+            }
+
+            $url = $baseUrl . $endpoint . '?' . http_build_query($params);
 
             $page = $this->getJson($url, $username, $password, $verifyTls);
             if (!is_array($page)) {
@@ -76,7 +88,7 @@ class Page extends PageHook
             }
 
             $offset += $limit;
-        } while ($count >= $limit);
+        } while ($count >= $limit && count($rows) < $maxRows);
 
         return $rows;
     }
@@ -286,6 +298,181 @@ class Page extends PageHook
         }
 
         return null;
+    }
+
+    private function lookupSolidServer(string $baseUrl, string $username, string $password, bool $verifyTls, array $ranges, string $query): array
+    {
+        $query = trim($query);
+        $type = $this->lookupType($query);
+        $rangeMatches = $type === 'ip' ? $this->lookupContainingRanges($ranges, $query) : [];
+        $apiResults = [];
+        $errors = [];
+
+        foreach ($this->lookupPlans($query, $type) as $plan) {
+            try {
+                $rows = $this->fetchRows(
+                    $baseUrl,
+                    $plan['endpoint'],
+                    $username,
+                    $password,
+                    $verifyTls,
+                    $plan['where'],
+                    100
+                );
+
+                foreach ($rows as $row) {
+                    $apiResults[] = [
+                        'endpoint' => $plan['endpoint'],
+                        'label' => $plan['label'],
+                        'summary' => $this->summarizeLookupRow($row),
+                        'row' => $this->visibleLookupFields($row),
+                    ];
+                }
+            } catch (\Throwable $exception) {
+                $errors[] = [
+                    'endpoint' => $plan['endpoint'],
+                    'message' => $exception->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'api_results' => $apiResults,
+            'errors' => $errors,
+            'query' => $query,
+            'range_matches' => $rangeMatches,
+            'type' => $type,
+        ];
+    }
+
+    private function lookupType(string $query): string
+    {
+        if (filter_var($query, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return 'ip';
+        }
+
+        if (preg_match('/^[0-9a-f]{2}([:\-]?[0-9a-f]{2}){5}$/i', $query)) {
+            return 'mac';
+        }
+
+        return 'name';
+    }
+
+    private function lookupPlans(string $query, string $type): array
+    {
+        $escaped = str_replace("'", "\\'", $query);
+        $normalizedMac = strtolower(str_replace('-', ':', $query));
+
+        if ($type === 'ip') {
+            return [
+                ['endpoint' => '/rest/dhcp_lease_list', 'label' => 'DHCP lease', 'where' => "hostaddr='{$escaped}'"],
+                ['endpoint' => '/rest/dhcp_static_list', 'label' => 'DHCP reservation', 'where' => "hostaddr='{$escaped}'"],
+                ['endpoint' => '/rest/ip_address_list', 'label' => 'IPAM address', 'where' => "hostaddr='{$escaped}'"],
+                ['endpoint' => '/rest/dns_rr_list', 'label' => 'DNS record', 'where' => "value1='{$escaped}'"],
+            ];
+        }
+
+        if ($type === 'mac') {
+            $mac = str_replace("'", "\\'", $normalizedMac);
+            return [
+                ['endpoint' => '/rest/dhcp_lease_list', 'label' => 'DHCP lease', 'where' => "mac_addr='{$mac}'"],
+                ['endpoint' => '/rest/dhcp_static_list', 'label' => 'DHCP reservation', 'where' => "mac_addr='{$mac}'"],
+                ['endpoint' => '/rest/ip_address_list', 'label' => 'IPAM address', 'where' => "mac_addr='{$mac}'"],
+            ];
+        }
+
+        return [
+            ['endpoint' => '/rest/dhcp_lease_list', 'label' => 'DHCP lease', 'where' => "name='{$escaped}'"],
+            ['endpoint' => '/rest/dhcp_static_list', 'label' => 'DHCP reservation', 'where' => "name='{$escaped}'"],
+            ['endpoint' => '/rest/ip_address_list', 'label' => 'IPAM address', 'where' => "name='{$escaped}'"],
+            ['endpoint' => '/rest/dns_rr_list', 'label' => 'DNS record', 'where' => "dnsrr_full_name='{$escaped}'"],
+        ];
+    }
+
+    private function lookupContainingRanges(array $ranges, string $ip): array
+    {
+        $matches = [];
+        $target = $this->ipToUnsigned($ip);
+        if ($target === null) {
+            return $matches;
+        }
+
+        foreach ($ranges as $range) {
+            $start = $this->ipToUnsigned((string) ($range['dhcprange_start_addr'] ?? ''));
+            $end = $this->ipToUnsigned((string) ($range['dhcprange_end_addr'] ?? ''));
+            if ($start === null || $end === null) {
+                continue;
+            }
+
+            if ($target >= $start && $target <= $end) {
+                $matches[] = [
+                    'end' => $range['dhcprange_end_addr'] ?? '',
+                    'failover' => $range['dhcprange_failover_name'] ?? '',
+                    'free' => null,
+                    'lease_percent' => $this->firstNumber($range, ['dhcprange_lease_percent', 'lease_percent']),
+                    'name' => $range['dhcprange_name'] ?? '',
+                    'scope' => $range['dhcpscope_name'] ?? '',
+                    'server' => $range['vdhcp_parent_name'] ?? $range['dhcp_name'] ?? '',
+                    'shared_network' => trim((string) ($range['dhcpsn_name'] ?? '')),
+                    'start' => $range['dhcprange_start_addr'] ?? '',
+                    'state' => $range['dhcprange_state'] ?? '',
+                    'total' => $this->firstNumber($range, ['dhcprange_size', 'dhcpscope_size']),
+                    'used' => $this->firstNumber($range, ['dhcprange_lease_count', 'dhcprange_used']),
+                    'vlan' => $this->detectVlan($range),
+                ];
+            }
+        }
+
+        return $matches;
+    }
+
+    private function ipToUnsigned(string $ip): ?float
+    {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return null;
+        }
+
+        return (float) sprintf('%u', ip2long($ip));
+    }
+
+    private function summarizeLookupRow(array $row): string
+    {
+        foreach (['hostaddr', 'ip_addr', 'name', 'hostname', 'dnsrr_full_name', 'dhcpstatic_name', 'dhcplease_name'] as $key) {
+            if (!empty($row[$key])) {
+                return (string) $row[$key];
+            }
+        }
+
+        return 'Solid Server record';
+    }
+
+    private function visibleLookupFields(array $row): array
+    {
+        $preferred = [
+            'hostaddr',
+            'name',
+            'hostname',
+            'mac_addr',
+            'client_id',
+            'dhcplease_end_time',
+            'dhcpstatic_name',
+            'dnsrr_full_name',
+            'value1',
+            'dhcpsn_name',
+            'dhcpscope_name',
+            'dhcprange_name',
+            'dhcp_name',
+            'vdhcp_parent_name',
+        ];
+        $visible = [];
+
+        foreach ($preferred as $key) {
+            if (isset($row[$key]) && $row[$key] !== '') {
+                $visible[$key] = $row[$key];
+            }
+        }
+
+        return $visible ?: array_slice($row, 0, 12, true);
     }
 
     private function summary(array $networks): array
