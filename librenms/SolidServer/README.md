@@ -37,6 +37,8 @@ Then enable it from the LibreNMS plugin admin page and configure:
   was present but not double-counted.
 - Provides per-shared-network drilldown into underlying ranges, lease counts,
   failover names, and DHCP sources.
+- Shows corresponding VLANs when Solid Server returns an explicit VLAN field or
+  when a VLAN can be parsed from names such as `Vlan 113`.
 
 ## What this plugin does not do
 

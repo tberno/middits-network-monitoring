@@ -72,7 +72,7 @@
     </div>
 
     <div class="solidserver-toolbar">
-        <input class="form-control input-sm" id="solidserver-filter" placeholder="Filter shared networks or DHCP source">
+        <input class="form-control input-sm" id="solidserver-filter" placeholder="Filter shared networks, VLAN, or DHCP source">
         <div class="btn-group btn-group-sm" data-toggle="buttons">
             <label class="btn btn-default active">
                 <input autocomplete="off" checked name="solidserver-state" type="radio" value="all"> All
@@ -94,6 +94,7 @@
             <tr>
                 <th>State</th>
                 <th>Shared network</th>
+                <th>VLAN</th>
                 <th>Free</th>
                 <th>Used %</th>
                 <th>Used</th>
@@ -107,8 +108,9 @@
             @forelse ($shared_networks as $network)
                 @php
                     $detail_id = 'solidserver-network-' . md5($network['name']);
+                    $vlan_text = $network['vlans'] ? implode(', ', $network['vlans']) : '';
                 @endphp
-                <tr class="solidserver-network-row" data-state="{{ $network['state'] }}" data-filter="{{ strtolower($network['name'] . ' ' . implode(' ', $network['servers'])) }}" data-detail="{{ $detail_id }}">
+                <tr class="solidserver-network-row" data-state="{{ $network['state'] }}" data-filter="{{ strtolower($network['name'] . ' ' . $vlan_text . ' ' . implode(' ', $network['servers'])) }}" data-detail="{{ $detail_id }}">
                     <td>
                         @if ($network['state'] === 'critical')
                             <span class="label label-danger">critical</span>
@@ -121,6 +123,15 @@
                         @endif
                     </td>
                     <td>{{ $network['name'] }}</td>
+                    <td>
+                        @if ($network['vlans'])
+                            @foreach ($network['vlans'] as $vlan)
+                                <span class="label label-primary">VLAN {{ $vlan }}</span>
+                            @endforeach
+                        @else
+                            <span class="text-muted">unknown</span>
+                        @endif
+                    </td>
                     <td class="solidserver-capacity">
                         @if ($network['free_percent'] !== null)
                             @if ($network['state'] === 'critical')
@@ -170,13 +181,14 @@
                     </td>
                 </tr>
                 <tr class="solidserver-detail-row" data-detail-for="{{ $detail_id }}">
-                    <td colspan="9">
+                    <td colspan="10">
                         <div class="collapse solidserver-detail" id="{{ $detail_id }}">
                             <table class="table table-condensed">
                                 <thead>
                                     <tr>
                                         <th>Range</th>
                                         <th>Scope</th>
+                                        <th>VLAN</th>
                                         <th>Used</th>
                                         <th>Total</th>
                                         <th>Free</th>
@@ -208,6 +220,15 @@
                                                 @endif
                                             </td>
                                             <td>{{ $range['scope'] }}</td>
+                                            <td>
+                                                @if ($range['vlans'])
+                                                    @foreach ($range['vlans'] as $vlan)
+                                                        <span class="label label-primary">VLAN {{ $vlan }}</span>
+                                                    @endforeach
+                                                @else
+                                                    <span class="text-muted">unknown</span>
+                                                @endif
+                                            </td>
                                             <td>{{ $range['used'] !== null ? number_format($range['used']) : 'unknown' }}</td>
                                             <td>{{ $range['total'] !== null ? number_format($range['total']) : 'unknown' }}</td>
                                             <td>{{ $range['free'] !== null ? number_format($range['free']) : 'unknown' }}</td>
@@ -235,7 +256,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="9">No DHCP shared network data returned.</td>
+                    <td colspan="10">No DHCP shared network data returned.</td>
                 </tr>
             @endforelse
         </tbody>

@@ -136,6 +136,7 @@ class Page extends PageHook
                 $range['dhcprange_end_addr'] ?? '',
                 $range['dhcprange_name'] ?? '',
             ]);
+            $vlan = $this->detectVlan($range);
 
             if (!isset($networks[$key])) {
                 $networks[$key] = [
@@ -152,6 +153,7 @@ class Page extends PageHook
                     'total' => 0,
                     'used' => 0,
                     'used_percent' => null,
+                    'vlans' => [],
                     'warning' => $warning,
                 ];
             }
@@ -159,6 +161,9 @@ class Page extends PageHook
             $server = trim((string) ($range['vdhcp_parent_name'] ?? $range['dhcp_name'] ?? $range['hostaddr'] ?? ''));
             if ($server !== '') {
                 $networks[$key]['servers'][$server] = true;
+            }
+            if ($vlan !== null) {
+                $networks[$key]['vlans'][$vlan] = true;
             }
 
             if (isset($seenRanges[$rangeKey])) {
@@ -168,6 +173,9 @@ class Page extends PageHook
                     $networks[$key]['ranges'][$rangeIndex]['duplicate_count']++;
                     if ($server !== '') {
                         $networks[$key]['ranges'][$rangeIndex]['servers'][$server] = true;
+                    }
+                    if ($vlan !== null) {
+                        $networks[$key]['ranges'][$rangeIndex]['vlans'][$vlan] = true;
                     }
                 }
                 continue;
@@ -211,14 +219,17 @@ class Page extends PageHook
                 'state' => $range['dhcprange_state'] ?? '',
                 'total' => $total,
                 'used' => $used,
+                'vlans' => $vlan !== null ? [$vlan => true] : [],
             ];
         }
 
         foreach ($networks as &$network) {
             if ($network['total'] <= 0) {
                 $network['servers'] = array_keys($network['servers']);
+                $network['vlans'] = array_keys($network['vlans']);
                 foreach ($network['ranges'] as &$range) {
                     $range['servers'] = array_keys($range['servers']);
+                    $range['vlans'] = array_keys($range['vlans']);
                 }
                 unset($range);
                 continue;
@@ -227,8 +238,12 @@ class Page extends PageHook
             $network['free_percent'] = ($network['free'] / $network['total']) * 100;
             $network['used_percent'] = ($network['used'] / $network['total']) * 100;
             $network['servers'] = array_keys($network['servers']);
+            $network['vlans'] = array_keys($network['vlans']);
+            sort($network['vlans'], SORT_NATURAL);
             foreach ($network['ranges'] as &$range) {
                 $range['servers'] = array_keys($range['servers']);
+                $range['vlans'] = array_keys($range['vlans']);
+                sort($range['vlans'], SORT_NATURAL);
                 if ($range['lease_percent'] === null && $range['total'] && $range['used'] !== null) {
                     $range['lease_percent'] = ($range['used'] / $range['total']) * 100;
                 }
@@ -247,6 +262,30 @@ class Page extends PageHook
         usort($networks, fn ($a, $b) => ($a['free_percent'] ?? 999) <=> ($b['free_percent'] ?? 999));
 
         return $networks;
+    }
+
+    private function detectVlan(array $row): ?string
+    {
+        foreach (['vlan_id', 'vlan', 'vlanid', 'dhcp_vlan_id', 'dhcpscope_vlan_id'] as $key) {
+            if (isset($row[$key]) && is_numeric($row[$key])) {
+                return (string) ((int) $row[$key]);
+            }
+        }
+
+        $text = implode(' ', array_filter([
+            $row['dhcpsn_name'] ?? null,
+            $row['dhcpscope_name'] ?? null,
+            $row['dhcprange_name'] ?? null,
+            $row['dhcp_comment'] ?? null,
+            $row['dhcprange_class_name'] ?? null,
+            $row['dhcpscope_class_name'] ?? null,
+        ]));
+
+        if (preg_match('/\bvlan[\s_-]*(\d{1,4})\b/i', $text, $match)) {
+            return (string) ((int) $match[1]);
+        }
+
+        return null;
     }
 
     private function summary(array $networks): array
