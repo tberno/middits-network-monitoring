@@ -45,7 +45,6 @@
                 <th>Used</th>
                 <th>Total</th>
                 <th>Ranges</th>
-                <th>HA duplicates</th>
                 <th>DHCP source</th>
                 <th>Details</th>
             </tr>
@@ -70,31 +69,42 @@
                     <td>{{ $network['name'] }}</td>
                     <td>
                         @if ($network['free_percent'] !== null)
-                            {{ number_format($network['free_percent'], 2) }}%
+                            @if ($network['state'] === 'critical')
+                                <span class="label label-danger">{{ number_format($network['free_percent'], 2) }}%</span>
+                            @elseif ($network['state'] === 'warning')
+                                <span class="label label-warning">{{ number_format($network['free_percent'], 2) }}%</span>
+                            @else
+                                <span class="label label-success">{{ number_format($network['free_percent'], 2) }}%</span>
+                            @endif
                         @else
-                            unknown
+                            <span class="label label-default">unknown</span>
                         @endif
                     </td>
                     <td>
                         @if ($network['used_percent'] !== null)
-                            {{ number_format($network['used_percent'], 2) }}%
+                            @if ($network['state'] === 'critical')
+                                <span class="label label-danger">{{ number_format($network['used_percent'], 2) }}%</span>
+                            @elseif ($network['state'] === 'warning')
+                                <span class="label label-warning">{{ number_format($network['used_percent'], 2) }}%</span>
+                            @else
+                                <span class="label label-success">{{ number_format($network['used_percent'], 2) }}%</span>
+                            @endif
                         @else
-                            unknown
+                            <span class="label label-default">unknown</span>
                         @endif
                     </td>
                     <td>{{ number_format($network['used']) }}</td>
                     <td>{{ number_format($network['total']) }}</td>
                     <td>{{ $network['range_count'] }}</td>
-                    <td>{{ $network['duplicate_range_count'] }}</td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
                     <td>
-                        <button class="btn btn-xs btn-default" type="button" data-toggle="collapse" data-target="#{{ $detail_id }}">
-                            Ranges
+                        <button class="btn btn-xs btn-info" type="button" data-toggle="collapse" data-target="#{{ $detail_id }}">
+                            {{ $network['range_count'] }} ranges
                         </button>
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="10">
+                    <td colspan="9">
                         <div class="collapse" id="{{ $detail_id }}">
                             <table class="table table-condensed">
                                 <thead>
@@ -113,6 +123,16 @@
                                 </thead>
                                 <tbody>
                                     @foreach ($network['ranges'] as $range)
+                                        @php
+                                            $range_state = 'ok';
+                                            if ($range['lease_percent'] === null) {
+                                                $range_state = 'unknown';
+                                            } elseif ((100 - $range['lease_percent']) <= $network['critical']) {
+                                                $range_state = 'critical';
+                                            } elseif ((100 - $range['lease_percent']) <= $network['warning']) {
+                                                $range_state = 'warning';
+                                            }
+                                        @endphp
                                         <tr>
                                             <td>
                                                 @if ($range['start'] || $range['end'])
@@ -125,7 +145,17 @@
                                             <td>{{ $range['used'] !== null ? number_format($range['used']) : 'unknown' }}</td>
                                             <td>{{ $range['total'] !== null ? number_format($range['total']) : 'unknown' }}</td>
                                             <td>{{ $range['free'] !== null ? number_format($range['free']) : 'unknown' }}</td>
-                                            <td>{{ $range['lease_percent'] !== null ? number_format($range['lease_percent'], 2) . '%' : 'unknown' }}</td>
+                                            <td>
+                                                @if ($range_state === 'critical')
+                                                    <span class="label label-danger">{{ number_format($range['lease_percent'], 2) }}%</span>
+                                                @elseif ($range_state === 'warning')
+                                                    <span class="label label-warning">{{ number_format($range['lease_percent'], 2) }}%</span>
+                                                @elseif ($range_state === 'ok')
+                                                    <span class="label label-success">{{ number_format($range['lease_percent'], 2) }}%</span>
+                                                @else
+                                                    <span class="label label-default">unknown</span>
+                                                @endif
+                                            </td>
                                             <td>{{ $range['state'] }}</td>
                                             <td>{{ $range['duplicate_count'] }}</td>
                                             <td>{{ $range['failover'] }}</td>
@@ -139,7 +169,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10">No DHCP shared network data returned.</td>
+                    <td colspan="9">No DHCP shared network data returned.</td>
                 </tr>
             @endforelse
         </tbody>
