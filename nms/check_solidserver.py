@@ -292,6 +292,7 @@ def dhcp_capacity(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
             "dhcpscope_used",
             "dhcpscope_addr_used",
             "dhcprange_used",
+            "dhcprange_lease_count",
             "used",
             "leases_used",
         ),

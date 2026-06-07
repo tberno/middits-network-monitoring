@@ -7,8 +7,7 @@
     "dhcpscope_net_addr": "10.32.4.0",
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
-    "dhcpscope_used": "230",
-    "dhcpscope_free": "24"
+    "dhcprange_lease_count": "230"
   },
   {
     "dhcpsn_id": "sn-100",
@@ -18,8 +17,7 @@
     "dhcpscope_net_addr": "10.32.5.0",
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
-    "dhcpscope_used": "240",
-    "dhcpscope_free": "14"
+    "dhcprange_lease_count": "240"
   },
   {
     "dhcpsn_id": "sn-100",
@@ -29,8 +27,7 @@
     "dhcpscope_net_addr": "10.32.6.0",
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
-    "dhcpscope_used": "245",
-    "dhcpscope_free": "9"
+    "dhcprange_lease_count": "245"
   },
   {
     "dhcpsn_id": "sn-200",
@@ -40,7 +37,6 @@
     "dhcpscope_net_addr": "10.50.0.0",
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
-    "dhcpscope_used": "100",
-    "dhcpscope_free": "154"
+    "dhcprange_lease_count": "100"
   }
 ]

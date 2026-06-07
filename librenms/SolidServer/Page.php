@@ -118,11 +118,24 @@ class Page extends PageHook
     private function aggregateSharedNetworks(array $ranges, float $warning, float $critical): array
     {
         $networks = [];
+        $seenRanges = [];
 
         foreach ($ranges as $range) {
-            $name = $range['dhcpsn_name'] ?? $range['shared_network'] ?? $range['dhcpscope_name'] ?? 'unknown';
+            $name = trim((string) ($range['dhcpsn_name'] ?? $range['shared_network'] ?? $range['dhcpscope_name'] ?? 'unknown'));
             $id = $range['dhcpsn_id'] ?? $range['shared_network_id'] ?? $name;
-            $key = (string) $id;
+            $key = $name;
+            $rangeKey = implode('|', [
+                $key,
+                $range['dhcprange_start_addr'] ?? '',
+                $range['dhcprange_end_addr'] ?? '',
+                $range['dhcprange_name'] ?? '',
+            ]);
+
+            if (isset($seenRanges[$rangeKey])) {
+                continue;
+            }
+
+            $seenRanges[$rangeKey] = true;
 
             if (!isset($networks[$key])) {
                 $networks[$key] = [
@@ -140,7 +153,7 @@ class Page extends PageHook
             }
 
             $total = $this->firstNumber($range, ['dhcpscope_size', 'dhcpscope_total', 'dhcprange_size', 'total', 'size']);
-            $used = $this->firstNumber($range, ['dhcpscope_used', 'dhcpscope_addr_used', 'dhcprange_used', 'used', 'leases_used']);
+            $used = $this->firstNumber($range, ['dhcpscope_used', 'dhcpscope_addr_used', 'dhcprange_used', 'dhcprange_lease_count', 'used', 'leases_used']);
             $free = $this->firstNumber($range, ['dhcpscope_free', 'dhcpscope_addr_free', 'dhcprange_free', 'free', 'leases_free', 'available']);
 
             if ($total === null && $used !== null && $free !== null) {
