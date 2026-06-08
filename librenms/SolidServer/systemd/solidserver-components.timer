@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Solid Server DHCP component sync every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=solidserver-components.service
+
+[Install]
+WantedBy=timers.target

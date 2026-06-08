@@ -8,7 +8,8 @@
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
     "dhcpscope_used": "230",
-    "dhcpscope_free": "24"
+    "dhcpscope_free": "24",
+    "dhcprange_lease_count": "230"
   },
   {
     "dhcpsn_id": "sn-100",
@@ -19,7 +20,8 @@
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
     "dhcpscope_used": "240",
-    "dhcpscope_free": "14"
+    "dhcpscope_free": "14",
+    "dhcprange_lease_count": "240"
   },
   {
     "dhcpsn_id": "sn-100",
@@ -30,7 +32,8 @@
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
     "dhcpscope_used": "245",
-    "dhcpscope_free": "9"
+    "dhcpscope_free": "9",
+    "dhcprange_lease_count": "245"
   },
   {
     "dhcpsn_id": "sn-200",
@@ -41,6 +44,7 @@
     "dhcpscope_prefix": "24",
     "dhcpscope_size": "254",
     "dhcpscope_used": "100",
-    "dhcpscope_free": "154"
+    "dhcpscope_free": "154",
+    "dhcprange_lease_count": "100"
   }
 ]

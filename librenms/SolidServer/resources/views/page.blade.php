@@ -1,52 +1,528 @@
-<h3>Solid Server DHCP shared networks</h3>
+<style>
+    .solidserver-page {
+        --ss-bg: #23282e;
+        --ss-panel: #2b3138;
+        --ss-panel-soft: #303740;
+        --ss-border: #1b2026;
+        --ss-muted: #9aa7b4;
+        --ss-text: #f2f5f7;
+        --ss-ok: #61bd66;
+        --ss-warn: #f0a12b;
+        --ss-crit: #e35d5d;
+        --ss-info: #54bfd8;
+        color: var(--ss-text);
+    }
 
-@if ($error)
-    <div class="alert alert-danger">{{ $error }}</div>
-@else
-    <p>Source: {{ $base_url }}</p>
+    .solidserver-page .ss-meta {
+        color: var(--ss-muted);
+        margin-bottom: 14px;
+    }
 
-    <table class="table table-condensed table-striped">
-        <thead>
-            <tr>
-                <th>State</th>
-                <th>Shared network</th>
-                <th>Free</th>
-                <th>Used</th>
-                <th>Total</th>
-                <th>Ranges</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse ($shared_networks as $network)
+    .solidserver-page .ss-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
+        gap: 12px;
+        margin: 12px 0 16px;
+        max-width: 760px;
+    }
+
+    .solidserver-page .ss-stat {
+        border-left: 5px solid var(--ss-info);
+        background: var(--ss-panel);
+        padding: 10px 12px;
+    }
+
+    .solidserver-page .ss-stat strong {
+        display: block;
+        font-size: 22px;
+        line-height: 1.1;
+    }
+
+    .solidserver-page .ss-stat span {
+        color: var(--ss-muted);
+        font-size: 12px;
+        text-transform: uppercase;
+    }
+
+    .solidserver-page .ss-stat.critical { border-color: var(--ss-crit); }
+    .solidserver-page .ss-stat.warning { border-color: var(--ss-warn); }
+    .solidserver-page .ss-stat.ok { border-color: var(--ss-ok); }
+    .solidserver-page .ss-stat.total { border-color: var(--ss-info); }
+
+    .solidserver-page .ss-toolbar {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+    }
+
+    .solidserver-page .ss-filter {
+        max-width: 340px;
+    }
+
+    .solidserver-page .ss-table {
+        table-layout: fixed;
+    }
+
+    .solidserver-page .ss-table th {
+        background: var(--ss-panel);
+        border-color: var(--ss-border);
+        color: var(--ss-text);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    .solidserver-page .ss-table td {
+        border-color: var(--ss-border);
+        vertical-align: middle;
+    }
+
+    .solidserver-page .ss-network-row.warning {
+        box-shadow: inset 4px 0 0 var(--ss-warn);
+    }
+
+    .solidserver-page .ss-network-row.critical {
+        box-shadow: inset 4px 0 0 var(--ss-crit);
+    }
+
+    .solidserver-page .ss-badge {
+        border-radius: 3px;
+        color: #fff;
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        min-width: 48px;
+        padding: 4px 6px;
+        text-align: center;
+    }
+
+    .solidserver-page .ss-badge.ok { background: var(--ss-ok); }
+    .solidserver-page .ss-badge.warning { background: var(--ss-warn); }
+    .solidserver-page .ss-badge.critical { background: var(--ss-crit); }
+    .solidserver-page .ss-badge.info { background: var(--ss-info); }
+    .solidserver-page .ss-badge.muted { background: #6c7782; }
+
+    .solidserver-page .ss-percent {
+        min-width: 132px;
+    }
+
+    .solidserver-page .ss-percent-label {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        margin-bottom: 2px;
+        padding: 2px 5px;
+    }
+
+    .solidserver-page .ss-percent-label.ok { background: var(--ss-ok); }
+    .solidserver-page .ss-percent-label.warning { background: var(--ss-warn); }
+    .solidserver-page .ss-percent-label.critical { background: var(--ss-crit); }
+    .solidserver-page .ss-bar {
+        background: #252b33;
+        border-radius: 2px;
+        height: 6px;
+        overflow: hidden;
+    }
+
+    .solidserver-page .ss-bar span {
+        display: block;
+        height: 6px;
+    }
+
+    .solidserver-page .ss-bar .ok { background: var(--ss-ok); }
+    .solidserver-page .ss-bar .warning { background: var(--ss-warn); }
+    .solidserver-page .ss-bar .critical { background: var(--ss-crit); }
+
+    .solidserver-page .ss-detail {
+        background: #252b31;
+        border-left: 4px solid #39434d;
+        padding: 10px 12px 14px;
+    }
+
+    .solidserver-page details.ss-disclosure > summary {
+        color: var(--ss-info);
+        cursor: pointer;
+        font-weight: 700;
+        list-style: none;
+    }
+
+    .solidserver-page details.ss-disclosure > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .solidserver-page details.ss-disclosure > summary:before {
+        content: "+";
+        display: inline-block;
+        margin-right: 6px;
+        width: 12px;
+    }
+
+    .solidserver-page details.ss-disclosure[open] > summary:before {
+        content: "-";
+    }
+
+    .solidserver-page .ss-notes {
+        display: grid;
+        gap: 8px;
+        margin: 10px 0;
+    }
+
+    .solidserver-page .ss-note {
+        border-left: 4px solid var(--ss-info);
+        background: rgba(84, 191, 216, 0.14);
+        padding: 8px 10px;
+    }
+
+    .solidserver-page .ss-note.warning {
+        border-color: var(--ss-warn);
+        background: rgba(240, 161, 43, 0.16);
+    }
+
+    .solidserver-page .ss-note.critical {
+        border-color: var(--ss-crit);
+        background: rgba(227, 93, 93, 0.16);
+    }
+
+    .solidserver-page .ss-muted {
+        color: var(--ss-muted);
+    }
+
+    @media (max-width: 900px) {
+        .solidserver-page .ss-summary {
+            grid-template-columns: repeat(2, minmax(140px, 1fr));
+        }
+    }
+</style>
+
+<div class="solidserver-page">
+    <h3>Solid Server DHCP shared networks</h3>
+
+    @if ($error)
+        <div class="alert alert-danger">{{ $error }}</div>
+    @else
+        @php
+            $summary = $summary ?? ['critical' => 0, 'warning' => 0, 'ok' => 0, 'total' => count($shared_networks ?? [])];
+            $lookupQuery = $lookup_query ?? '';
+        @endphp
+
+        <div class="ss-meta">
+            Source: {{ $base_url }}
+            @if (!empty($fetched_at))
+                <span>| fetched {{ $fetched_at }}</span>
+            @endif
+            @if (!empty($raw_range_count))
+                <span>| raw ranges {{ number_format($raw_range_count) }}</span>
+            @endif
+        </div>
+
+        <div class="ss-summary">
+            <div class="ss-stat critical">
+                <strong>{{ number_format($summary['critical'] ?? 0) }}</strong>
+                <span>Critical</span>
+            </div>
+            <div class="ss-stat warning">
+                <strong>{{ number_format($summary['warning'] ?? 0) }}</strong>
+                <span>Warning</span>
+            </div>
+            <div class="ss-stat ok">
+                <strong>{{ number_format($summary['ok'] ?? 0) }}</strong>
+                <span>OK</span>
+            </div>
+            <div class="ss-stat total">
+                <strong>{{ number_format($summary['total'] ?? count($shared_networks ?? [])) }}</strong>
+                <span>Shared networks</span>
+            </div>
+        </div>
+
+        <form class="ss-toolbar" method="GET">
+            <label class="sr-only" for="lookup">DHCP / IP lookup</label>
+            <strong>DHCP / IP lookup</strong>
+            <input class="form-control input-sm ss-filter" id="lookup" name="lookup" value="{{ $lookupQuery }}" placeholder="IP, MAC, hostname, or reservation">
+            <button class="btn btn-primary btn-sm" type="submit">Lookup</button>
+            <span class="ss-muted">Read-only lookup; no reservation changes are made.</span>
+        </form>
+
+        @if (!empty($lookup))
+            <div class="ss-detail">
+                <h4>Lookup result: {{ $lookup['query'] ?? $lookupQuery }}</h4>
+
+                @if (!empty($lookup['range_matches']))
+                    <table class="table table-condensed">
+                        <thead>
+                            <tr>
+                                <th>Shared network</th>
+                                <th>Range</th>
+                                <th>Scope</th>
+                                <th>VLAN</th>
+                                <th>Used</th>
+                                <th>Total</th>
+                                <th>DHCP source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($lookup['range_matches'] as $match)
+                                <tr>
+                                    <td>{{ $match['shared_network'] ?? '' }}</td>
+                                    <td>{{ $match['start'] ?? '' }} - {{ $match['end'] ?? '' }}</td>
+                                    <td>{{ $match['scope'] ?? '' }}</td>
+                                    <td>{{ $match['vlan'] ?? 'unknown' }}</td>
+                                    <td>{{ isset($match['used']) ? number_format($match['used']) : 'unknown' }}</td>
+                                    <td>{{ isset($match['total']) ? number_format($match['total']) : 'unknown' }}</td>
+                                    <td>{{ $match['server'] ?? '' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @else
+                    <div class="ss-note warning">No DHCP range contains this IP in the current Solid Server range data.</div>
+                @endif
+
+                @if (!empty($lookup['api_results']))
+                    <details class="ss-disclosure" open>
+                        <summary>{{ count($lookup['api_results']) }} API records</summary>
+                        <table class="table table-condensed">
+                            <tbody>
+                                @foreach ($lookup['api_results'] as $result)
+                                    <tr>
+                                        <th>{{ $result['label'] ?? $result['endpoint'] ?? 'Record' }}</th>
+                                        <td>{{ $result['summary'] ?? '' }}</td>
+                                        <td>
+                                            @foreach (($result['row'] ?? []) as $key => $value)
+                                                <span class="label label-default">{{ $key }}={{ $value }}</span>
+                                            @endforeach
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </details>
+                @endif
+            </div>
+        @endif
+
+        <div class="ss-toolbar">
+            <input class="form-control input-sm ss-filter" id="solidserver-filter" placeholder="Filter shared networks, VLAN, DHCP source">
+            <button class="btn btn-default btn-sm" data-ss-state="all" type="button">All</button>
+            <button class="btn btn-danger btn-sm" data-ss-state="critical" type="button">Critical</button>
+            <button class="btn btn-warning btn-sm" data-ss-state="warning" type="button">Warning</button>
+            <button class="btn btn-success btn-sm" data-ss-state="ok" type="button">OK</button>
+        </div>
+
+        <table class="table table-condensed table-striped ss-table" id="solidserver-networks">
+            <thead>
                 <tr>
-                    <td>
-                        @if ($network['state'] === 'critical')
-                            <span class="label label-danger">critical</span>
-                        @elseif ($network['state'] === 'warning')
-                            <span class="label label-warning">warning</span>
-                        @elseif ($network['state'] === 'ok')
-                            <span class="label label-success">ok</span>
-                        @else
-                            <span class="label label-default">unknown</span>
-                        @endif
-                    </td>
-                    <td>{{ $network['name'] }}</td>
-                    <td>
-                        @if ($network['free_percent'] !== null)
-                            {{ number_format($network['free_percent'], 2) }}%
-                        @else
-                            unknown
-                        @endif
-                    </td>
-                    <td>{{ number_format($network['used']) }}</td>
-                    <td>{{ number_format($network['total']) }}</td>
-                    <td>{{ $network['range_count'] }}</td>
+                    <th style="width: 72px;">State</th>
+                    <th style="width: 190px;">Shared network</th>
+                    <th style="width: 110px;">VLAN</th>
+                    <th style="width: 150px;">Free</th>
+                    <th style="width: 150px;">Used %</th>
+                    <th style="width: 70px;">Used</th>
+                    <th style="width: 70px;">Total</th>
+                    <th style="width: 72px;">Ranges</th>
+                    <th style="width: 110px;">LibreNMS</th>
+                    <th style="width: 90px;">Attention</th>
+                    <th>DHCP source</th>
+                    <th style="width: 110px;">Details</th>
                 </tr>
-            @empty
-                <tr>
-                    <td colspan="6">No DHCP shared network data returned.</td>
-                </tr>
-            @endforelse
-        </tbody>
-    </table>
-@endif
+            </thead>
+            <tbody>
+                @forelse ($shared_networks as $network)
+                    @php
+                        $state = $network['state'] ?? 'unknown';
+                        $stateClass = in_array($state, ['critical', 'warning', 'ok'], true) ? $state : 'muted';
+                        $freePercent = $network['free_percent'] ?? null;
+                        $usedPercent = $network['used_percent'] ?? ($freePercent !== null ? 100 - $freePercent : null);
+                        $vlans = $network['vlans'] ?? [];
+                        $vlanText = $vlans ? implode(', ', $vlans) : ($network['vlan'] ?? 'not detected');
+                        $servers = $network['servers'] ?? $network['server_names'] ?? [];
+                        $serverText = is_array($servers) ? implode(', ', $servers) : (string) $servers;
+                        $librenms = $network['librenms'] ?? [];
+                        $interfaceMatches = $librenms['interface_matches'] ?? [];
+                        $vlanMatches = $librenms['vlan_matches'] ?? [];
+                        $notes = $network['attention_notes'] ?? $network['notes'] ?? [];
+                        $ranges = $network['ranges'] ?? [];
+                    @endphp
+
+                    <tr class="ss-network-row {{ $state }}" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText) }}">
+                        <td><span class="ss-badge {{ $stateClass }}">{{ $state }}</span></td>
+                        <td>{{ $network['name'] ?? 'unknown' }}</td>
+                        <td class="{{ $vlans ? '' : 'ss-muted' }}">{{ $vlanText }}</td>
+                        <td class="ss-percent">
+                            @if ($freePercent !== null)
+                                <span class="ss-percent-label {{ $stateClass }}">{{ number_format($freePercent, 2) }}%</span>
+                                <div class="ss-bar"><span class="{{ $stateClass }}" style="width: {{ max(0, min(100, $freePercent)) }}%;"></span></div>
+                            @else
+                                <span class="ss-muted">unknown</span>
+                            @endif
+                        </td>
+                        <td class="ss-percent">
+                            @if ($usedPercent !== null)
+                                <span class="ss-percent-label {{ $stateClass }}">{{ number_format($usedPercent, 2) }}%</span>
+                                <div class="ss-bar"><span class="{{ $stateClass }}" style="width: {{ max(0, min(100, $usedPercent)) }}%;"></span></div>
+                            @else
+                                <span class="ss-muted">unknown</span>
+                            @endif
+                        </td>
+                        <td>{{ number_format($network['used'] ?? 0) }}</td>
+                        <td>{{ number_format($network['total'] ?? 0) }}</td>
+                        <td>{{ number_format($network['range_count'] ?? count($ranges)) }}</td>
+                        <td>
+                            @if (count($interfaceMatches))
+                                <span class="ss-badge muted">{{ count($interfaceMatches) }} intf</span>
+                            @elseif (count($vlanMatches))
+                                <span class="ss-badge muted">{{ count($vlanMatches) }} vlan</span>
+                            @else
+                                <span class="ss-muted">none</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if (count($notes))
+                                <span class="ss-badge {{ $state === 'ok' ? 'info' : $stateClass }}">{{ count($notes) }} note</span>
+                            @else
+                                <span class="ss-muted">none</span>
+                            @endif
+                        </td>
+                        <td>{{ $serverText ?: 'unknown' }}</td>
+                        <td>
+                            <a href="#ss-detail-{{ $loop->index }}" class="btn btn-info btn-xs">{{ number_format(count($ranges) ?: ($network['range_count'] ?? 0)) }} ranges</a>
+                        </td>
+                    </tr>
+
+                    <tr id="ss-detail-{{ $loop->index }}" class="ss-detail-row" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText) }}">
+                        <td colspan="12" class="ss-detail">
+                            <details class="ss-disclosure">
+                                <summary>Details for {{ $network['name'] ?? 'unknown' }}</summary>
+
+                                @if (count($interfaceMatches))
+                                    <h4>LibreNMS interface matches</h4>
+                                    <table class="table table-condensed">
+                                        <thead>
+                                            <tr>
+                                                <th>EIP CIDR</th>
+                                                <th>Interface IP</th>
+                                                <th>Device</th>
+                                                <th>Port</th>
+                                                <th>Description</th>
+                                                <th>Alias</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach ($interfaceMatches as $match)
+                                                <tr>
+                                                    <td>{{ $match['cidr'] ?? '' }}</td>
+                                                    <td>{{ $match['ip'] ?? $match['interface_ip'] ?? '' }}</td>
+                                                    <td>{{ $match['hostname'] ?? $match['device'] ?? '' }}</td>
+                                                    <td>{{ $match['ifName'] ?? $match['port'] ?? '' }}</td>
+                                                    <td>{{ $match['ifDescr'] ?? $match['description'] ?? '' }}</td>
+                                                    <td>{{ $match['ifAlias'] ?? $match['alias'] ?? '' }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                @endif
+
+                                @if (count($notes))
+                                    <h4>Attention notes</h4>
+                                    <div class="ss-notes">
+                                        @foreach ($notes as $note)
+                                            @php
+                                                $noteText = is_array($note) ? ($note['text'] ?? $note['message'] ?? json_encode($note)) : $note;
+                                                $noteSeverity = is_array($note) ? ($note['severity'] ?? $note['state'] ?? 'info') : 'info';
+                                                if (str_contains(strtolower($noteText), 'threshold') || str_contains(strtolower($noteText), 'free capacity')) {
+                                                    $noteSeverity = $state === 'critical' ? 'critical' : 'warning';
+                                                }
+                                            @endphp
+                                            <div class="ss-note {{ in_array($noteSeverity, ['critical', 'warning'], true) ? $noteSeverity : '' }}">{{ $noteText }}</div>
+                                        @endforeach
+                                    </div>
+                                @endif
+
+                                @if (count($ranges))
+                                    <h4>Ranges</h4>
+                                    <table class="table table-condensed">
+                                        <thead>
+                                            <tr>
+                                                <th>Range</th>
+                                                <th>Scope</th>
+                                                <th>VLAN</th>
+                                                <th>Used</th>
+                                                <th>Total</th>
+                                                <th>Free</th>
+                                                <th>Lease %</th>
+                                                <th>State</th>
+                                                <th>HA duplicates</th>
+                                                <th>Failover</th>
+                                                <th>Source</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach ($ranges as $range)
+                                                <tr>
+                                                    <td>{{ $range['start'] ?? '' }} - {{ $range['end'] ?? '' }}</td>
+                                                    <td>{{ $range['scope'] ?? $range['cidr'] ?? '' }}</td>
+                                                    <td>{{ $range['vlan'] ?? (($range['vlans'] ?? []) ? implode(', ', $range['vlans']) : 'unknown') }}</td>
+                                                    <td>{{ number_format($range['used'] ?? 0) }}</td>
+                                                    <td>{{ number_format($range['total'] ?? 0) }}</td>
+                                                    <td>{{ number_format($range['free'] ?? 0) }}</td>
+                                                    <td>
+                                                        @php $lease = $range['lease_percent'] ?? null; @endphp
+                                                        @if ($lease !== null)
+                                                            <span class="ss-badge {{ $lease >= 90 ? 'warning' : 'ok' }}">{{ number_format($lease, 2) }}%</span>
+                                                        @else
+                                                            <span class="ss-muted">unknown</span>
+                                                        @endif
+                                                    </td>
+                                                    <td>{{ $range['state'] ?? '' }}</td>
+                                                    <td>{{ $range['duplicate_count'] ?? 0 }}</td>
+                                                    <td>{{ $range['failover'] ?? '' }}</td>
+                                                    <td>{{ $range['server'] ?? (($range['servers'] ?? []) ? implode(', ', array_keys($range['servers'])) : '') }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                @endif
+                            </details>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="12">No DHCP shared network data returned.</td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    @endif
+</div>
+
+<script>
+    (function () {
+        var filter = document.getElementById('solidserver-filter');
+        var buttons = document.querySelectorAll('[data-ss-state]');
+        var rows = document.querySelectorAll('#solidserver-networks tbody tr');
+        var activeState = 'all';
+
+        function applyFilter() {
+            var text = (filter && filter.value ? filter.value : '').toLowerCase();
+
+            rows.forEach(function (row) {
+                var stateMatch = activeState === 'all' || row.getAttribute('data-state') === activeState;
+                var textMatch = !text || (row.getAttribute('data-search') || '').indexOf(text) !== -1;
+                row.style.display = stateMatch && textMatch ? '' : 'none';
+            });
+        }
+
+        if (filter) {
+            filter.addEventListener('input', applyFilter);
+        }
+
+        buttons.forEach(function (button) {
+            button.addEventListener('click', function () {
+                activeState = button.getAttribute('data-ss-state') || 'all';
+                applyFilter();
+            });
+        });
+    })();
+</script>

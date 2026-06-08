@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Solid Server DHCP components into LibreNMS
+
+[Service]
+Type=oneshot
+User=librenms
+WorkingDirectory=/opt/librenms
+ExecStart=/usr/bin/php /opt/librenms/app/Plugins/SolidServer/bin/sync_components.php --device-id 839
