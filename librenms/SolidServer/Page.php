@@ -492,7 +492,50 @@ class Page extends PageHook
             }
         }
 
+        foreach ($networks as &$network) {
+            $network['notes'] = $this->networkNotes($network);
+        }
+        unset($network);
+
         return $networks;
+    }
+
+    private function networkNotes(array $network): array
+    {
+        $notes = [];
+        $hasVlans = !empty($network['vlans']);
+        $hasVlanMatches = !empty($network['librenms']['vlan_matches']);
+        $hasInterfaces = !empty($network['librenms']['interface_matches']);
+
+        if (!$hasVlans && $hasInterfaces) {
+            $notes[] = [
+                'level' => 'info',
+                'text' => 'LibreNMS interface match found; VLAN may be inferable from interface naming or alias.',
+            ];
+        }
+
+        if ($hasVlans && !$hasVlanMatches) {
+            $notes[] = [
+                'level' => 'warning',
+                'text' => 'VLAN detected from EIP/interface data but no LibreNMS VLAN inventory match was found.',
+            ];
+        }
+
+        if (!$hasInterfaces && !empty($network['cidrs'])) {
+            $notes[] = [
+                'level' => 'warning',
+                'text' => 'No LibreNMS interface IP was found inside the EIP scope CIDR.',
+            ];
+        }
+
+        if (($network['state'] ?? '') === 'warning' || ($network['state'] ?? '') === 'critical') {
+            $notes[] = [
+                'level' => $network['state'],
+                'text' => 'DHCP free capacity is below the configured threshold.',
+            ];
+        }
+
+        return $notes;
     }
 
     private function networkNameTerms(string $name): array

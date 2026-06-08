@@ -46,6 +46,8 @@ Then enable it from the LibreNMS plugin admin page and configure:
   names, descriptions, and aliases.
 - Cross-references EIP scope CIDRs with LibreNMS interface IPv4 addresses to
   identify likely gateway/SVI/interface owners for each DHCP network.
+- Adds attention notes for correlation gaps, such as EIP VLANs without
+  LibreNMS VLAN matches or EIP CIDRs without matching LibreNMS interface IPs.
 - Provides a read-only DHCP/IP lookup panel for IP, MAC, hostname, or
   reservation-style searches. IP searches always map to the containing DHCP
   range from `/rest/dhcp_range_list` and then try read-only lease, reservation,

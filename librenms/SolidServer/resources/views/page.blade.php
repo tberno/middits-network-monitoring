@@ -227,6 +227,7 @@
                 <th>Total</th>
                 <th>Ranges</th>
                 <th>LibreNMS</th>
+                <th>Attention</th>
                 <th>DHCP source</th>
                 <th>Details</th>
             </tr>
@@ -321,6 +322,21 @@
                             <span class="text-muted">no LibreNMS match</span>
                         @endif
                     </td>
+                    <td>
+                        @if ($network['notes'])
+                            @foreach ($network['notes'] as $note)
+                                @if ($note['level'] === 'critical')
+                                    <span class="label label-danger">critical</span>
+                                @elseif ($note['level'] === 'warning')
+                                    <span class="label label-warning">check</span>
+                                @else
+                                    <span class="label label-info">note</span>
+                                @endif
+                            @endforeach
+                        @else
+                            <span class="text-muted">clear</span>
+                        @endif
+                    </td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
                     <td>
                         <button class="btn btn-xs btn-info" type="button" data-toggle="collapse" data-target="#{{ $detail_id }}">
@@ -329,7 +345,7 @@
                     </td>
                 </tr>
                 <tr class="solidserver-detail-row" data-detail-for="{{ $detail_id }}">
-                    <td colspan="11">
+                    <td colspan="12">
                         <div class="collapse solidserver-detail" id="{{ $detail_id }}">
                             @if ($network['librenms']['error'])
                                 <div class="alert alert-warning">
@@ -405,6 +421,19 @@
                                         @endforeach
                                     </tbody>
                                 </table>
+                            @endif
+
+                            @if ($network['notes'])
+                                <h5>Attention notes</h5>
+                                @foreach ($network['notes'] as $note)
+                                    @if ($note['level'] === 'critical')
+                                        <div class="alert alert-danger">{{ $note['text'] }}</div>
+                                    @elseif ($note['level'] === 'warning')
+                                        <div class="alert alert-warning">{{ $note['text'] }}</div>
+                                    @else
+                                        <div class="alert alert-info">{{ $note['text'] }}</div>
+                                    @endif
+                                @endforeach
                             @endif
 
                             <table class="table table-condensed">
