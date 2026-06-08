@@ -4,6 +4,7 @@ namespace App\Plugins\SolidServer;
 
 use App\Plugins\Hooks\PageHook;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\DB;
 
 class Page extends PageHook
 {
@@ -34,6 +35,7 @@ class Page extends PageHook
                 $ranges = $this->fetchRows($baseUrl, '/rest/dhcp_range_list', $username, $password, $verifyTls);
                 $rawRangeCount = count($ranges);
                 $sharedNetworks = $this->aggregateSharedNetworks($ranges, $warning, $critical);
+                $sharedNetworks = $this->enrichWithLibreNms($sharedNetworks);
                 if ($lookupQuery !== '') {
                     $lookup = $this->lookupSolidServer($baseUrl, $username, $password, $verifyTls, $ranges, $lookupQuery);
                 }
@@ -160,6 +162,10 @@ class Page extends PageHook
                     'name' => $name,
                     'range_count' => 0,
                     'ranges' => [],
+                    'librenms' => [
+                        'error' => null,
+                        'vlan_matches' => [],
+                    ],
                     'servers' => [],
                     'state' => 'unknown',
                     'total' => 0,
@@ -272,6 +278,69 @@ class Page extends PageHook
         }
 
         usort($networks, fn ($a, $b) => ($a['free_percent'] ?? 999) <=> ($b['free_percent'] ?? 999));
+
+        return $networks;
+    }
+
+    private function enrichWithLibreNms(array $networks): array
+    {
+        $vlanIds = [];
+        foreach ($networks as $network) {
+            foreach ($network['vlans'] ?? [] as $vlan) {
+                if (is_numeric($vlan)) {
+                    $vlanIds[(string) ((int) $vlan)] = true;
+                }
+            }
+        }
+
+        if (!$vlanIds) {
+            return $networks;
+        }
+
+        try {
+            $rows = DB::table('vlans')
+                ->leftJoin('devices', 'devices.device_id', '=', 'vlans.device_id')
+                ->whereIn('vlans.vlan_vlan', array_keys($vlanIds))
+                ->select([
+                    'vlans.vlan_vlan',
+                    'vlans.vlan_name',
+                    'vlans.vlan_domain',
+                    'devices.device_id',
+                    'devices.hostname',
+                    'devices.sysName',
+                ])
+                ->orderBy('vlans.vlan_vlan')
+                ->orderBy('devices.hostname')
+                ->limit(2000)
+                ->get();
+
+            $matchesByVlan = [];
+            foreach ($rows as $row) {
+                $vlan = (string) ((int) $row->vlan_vlan);
+                $matchesByVlan[$vlan][] = [
+                    'device_id' => $row->device_id,
+                    'hostname' => $row->hostname ?: $row->sysName ?: 'unknown-device',
+                    'name' => $row->vlan_name ?: '',
+                    'domain' => $row->vlan_domain ?: '',
+                ];
+            }
+
+            foreach ($networks as &$network) {
+                $network['librenms']['vlan_matches'] = [];
+                foreach ($network['vlans'] ?? [] as $vlan) {
+                    $vlanKey = (string) ((int) $vlan);
+                    if (!empty($matchesByVlan[$vlanKey])) {
+                        $network['librenms']['vlan_matches'][$vlanKey] = $matchesByVlan[$vlanKey];
+                    }
+                }
+            }
+            unset($network);
+        } catch (\Throwable $exception) {
+            foreach ($networks as &$network) {
+                $network['librenms']['error'] = $exception->getMessage();
+            }
+            unset($network);
+        }
 
         return $networks;
     }

@@ -39,6 +39,8 @@ Then enable it from the LibreNMS plugin admin page and configure:
   failover names, and DHCP sources.
 - Shows corresponding VLANs when Solid Server returns an explicit VLAN field or
   when a VLAN can be parsed from names such as `Vlan 113`.
+- Cross-references detected EIP VLANs with LibreNMS VLAN inventory and links
+  matching LibreNMS devices in the shared-network drilldown.
 - Provides a read-only DHCP/IP lookup panel for IP, MAC, hostname, or
   reservation-style searches. IP searches always map to the containing DHCP
   range from `/rest/dhcp_range_list` and then try read-only lease, reservation,

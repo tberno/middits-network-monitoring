@@ -226,6 +226,7 @@
                 <th>Used</th>
                 <th>Total</th>
                 <th>Ranges</th>
+                <th>LibreNMS</th>
                 <th>DHCP source</th>
                 <th>Details</th>
             </tr>
@@ -299,6 +300,21 @@
                     <td>{{ number_format($network['used']) }}</td>
                     <td>{{ number_format($network['total']) }}</td>
                     <td>{{ $network['range_count'] }}</td>
+                    <td>
+                        @if ($network['librenms']['error'])
+                            <span class="label label-default">error</span>
+                        @elseif ($network['librenms']['vlan_matches'])
+                            @php
+                                $device_count = 0;
+                                foreach ($network['librenms']['vlan_matches'] as $matches) {
+                                    $device_count += count($matches);
+                                }
+                            @endphp
+                            <span class="label label-info">{{ $device_count }} VLAN device{{ $device_count === 1 ? '' : 's' }}</span>
+                        @else
+                            <span class="text-muted">no VLAN match</span>
+                        @endif
+                    </td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
                     <td>
                         <button class="btn btn-xs btn-info" type="button" data-toggle="collapse" data-target="#{{ $detail_id }}">
@@ -307,8 +323,44 @@
                     </td>
                 </tr>
                 <tr class="solidserver-detail-row" data-detail-for="{{ $detail_id }}">
-                    <td colspan="10">
+                    <td colspan="11">
                         <div class="collapse solidserver-detail" id="{{ $detail_id }}">
+                            @if ($network['librenms']['error'])
+                                <div class="alert alert-warning">
+                                    LibreNMS enrichment failed: {{ $network['librenms']['error'] }}
+                                </div>
+                            @elseif ($network['librenms']['vlan_matches'])
+                                <h5>LibreNMS VLAN matches</h5>
+                                <table class="table table-condensed table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>VLAN</th>
+                                            <th>LibreNMS VLAN name</th>
+                                            <th>Domain</th>
+                                            <th>Device</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($network['librenms']['vlan_matches'] as $vlan => $matches)
+                                            @foreach ($matches as $match)
+                                                <tr>
+                                                    <td><span class="label label-primary">VLAN {{ $vlan }}</span></td>
+                                                    <td>{{ $match['name'] }}</td>
+                                                    <td>{{ $match['domain'] }}</td>
+                                                    <td>
+                                                        @if ($match['device_id'])
+                                                            <a href="{{ url('/device/device=' . $match['device_id']) }}">{{ $match['hostname'] }}</a>
+                                                        @else
+                                                            {{ $match['hostname'] }}
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            @endif
+
                             <table class="table table-condensed">
                                 <thead>
                                     <tr>
