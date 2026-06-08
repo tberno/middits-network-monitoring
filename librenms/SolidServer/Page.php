@@ -307,9 +307,13 @@ class Page extends PageHook
                     ->select([
                         'ipv4_addresses.ipv4_address',
                         'ipv4_addresses.ipv4_prefixlen',
+                        'ports.ifAdminStatus',
                         'ports.ifName',
                         'ports.ifDescr',
+                        'ports.ifOperStatus',
                         'ports.ifAlias',
+                        'ports.port_id',
+                        'devices.device_id',
                         'devices.hostname',
                         'devices.sysName',
                     ])
@@ -335,24 +339,44 @@ class Page extends PageHook
                                 continue;
                             }
 
+                            $deviceId = isset($row->device_id) ? (int) $row->device_id : null;
+                            $portId = isset($row->port_id) ? (int) $row->port_id : null;
+                            $hostname = $row->hostname ?: $row->sysName ?: '';
+                            $interfaceVlan = $this->inferVlanFromInterface($row->ifName, $row->ifDescr, $row->ifAlias);
+                            $isGatewayLike = $ip === ($bounds['start'] + 1);
+
                             $networks[$networkKey]['librenms']['interface_matches'][] = [
                                 'alias' => $row->ifAlias ?: '',
+                                'admin_status' => $row->ifAdminStatus ?: '',
                                 'cidr' => $cidr,
                                 'description' => $row->ifDescr ?: '',
-                                'device' => $row->hostname ?: $row->sysName ?: '',
-                                'hostname' => $row->hostname ?: $row->sysName ?: '',
+                                'device' => $hostname,
+                                'device_id' => $deviceId,
+                                'device_url' => $deviceId ? url('/device/device=' . $deviceId . '/') : null,
+                                'hostname' => $hostname,
                                 'ifAlias' => $row->ifAlias ?: '',
                                 'ifDescr' => $row->ifDescr ?: '',
                                 'ifName' => $row->ifName ?: '',
+                                'inferred_vlan' => $interfaceVlan,
                                 'interface_ip' => $row->ipv4_address . '/' . $row->ipv4_prefixlen,
+                                'is_gateway_like' => $isGatewayLike,
                                 'ip' => $row->ipv4_address . '/' . $row->ipv4_prefixlen,
+                                'oper_status' => $row->ifOperStatus ?: '',
                                 'port' => $row->ifName ?: '',
+                                'port_id' => $portId,
+                                'port_url' => ($deviceId && $portId) ? url('/device/device=' . $deviceId . '/tab=port/port=' . $portId . '/') : null,
                             ];
 
-                            $vlan = $this->inferVlanFromInterface($row->ifName, $row->ifDescr, $row->ifAlias);
-                            if ($vlan !== null && !in_array($vlan, $networks[$networkKey]['vlans'], true)) {
-                                $networks[$networkKey]['vlans'][] = $vlan;
-                                $vlanIds[$vlan] = true;
+                            if ($interfaceVlan !== null && !in_array($interfaceVlan, $networks[$networkKey]['vlans'], true)) {
+                                if (!empty($networks[$networkKey]['vlans'])) {
+                                    $networks[$networkKey]['attention_notes'][] = [
+                                        'severity' => 'warning',
+                                        'text' => 'LibreNMS interface VLAN ' . $interfaceVlan . ' differs from the VLAN detected in EIP.',
+                                    ];
+                                }
+
+                                $networks[$networkKey]['vlans'][] = $interfaceVlan;
+                                $vlanIds[$interfaceVlan] = true;
                             }
                         }
                     }
@@ -395,6 +419,8 @@ class Page extends PageHook
             }
         }
 
+        $networks = $this->attachLibreNmsDeviceContext($networks);
+
         foreach ($networks as &$network) {
             if (!empty($network['cidrs']) && empty($network['librenms']['interface_matches'])) {
                 $network['attention_notes'][] = [
@@ -416,6 +442,73 @@ class Page extends PageHook
                     'text' => 'Detected VLAN has no matching LibreNMS VLAN inventory entry.',
                 ];
             }
+
+            $gatewayMatches = array_filter($network['librenms']['interface_matches'] ?? [], fn ($match) => !empty($match['is_gateway_like']));
+            if (!empty($network['librenms']['interface_matches']) && empty($gatewayMatches)) {
+                $network['attention_notes'][] = [
+                    'severity' => 'info',
+                    'text' => 'LibreNMS interfaces were found in the subnet, but none look like the first usable gateway address.',
+                ];
+            }
+        }
+        unset($network);
+
+        return $networks;
+    }
+
+    private function attachLibreNmsDeviceContext(array $networks): array
+    {
+        $deviceIds = [];
+
+        foreach ($networks as $network) {
+            foreach ($network['librenms']['interface_matches'] ?? [] as $match) {
+                if (!empty($match['device_id'])) {
+                    $deviceIds[(int) $match['device_id']] = true;
+                }
+            }
+        }
+
+        if (!$deviceIds) {
+            return $networks;
+        }
+
+        $alertCounts = [];
+        try {
+            $rows = DB::table('alerts')
+                ->select('device_id', DB::raw('COUNT(*) as alert_count'))
+                ->whereIn('device_id', array_keys($deviceIds))
+                ->where('open', 1)
+                ->whereIn('state', [1, 2])
+                ->groupBy('device_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $alertCounts[(int) $row->device_id] = (int) $row->alert_count;
+            }
+        } catch (\Throwable $exception) {
+            $alertCounts = [];
+        }
+
+        foreach ($networks as &$network) {
+            $devices = [];
+            foreach ($network['librenms']['interface_matches'] ?? [] as &$match) {
+                $deviceId = !empty($match['device_id']) ? (int) $match['device_id'] : null;
+                if ($deviceId !== null) {
+                    $match['open_alerts'] = $alertCounts[$deviceId] ?? 0;
+                    $devices[$deviceId] = [
+                        'device_id' => $deviceId,
+                        'hostname' => $match['hostname'] ?? '',
+                        'open_alerts' => $alertCounts[$deviceId] ?? 0,
+                        'url' => $match['device_url'] ?? null,
+                    ];
+                }
+            }
+            unset($match);
+
+            $network['librenms']['device_matches'] = array_values($devices);
+            $network['librenms']['device_count'] = count($devices);
+            $network['librenms']['gateway_count'] = count(array_filter($network['librenms']['interface_matches'] ?? [], fn ($match) => !empty($match['is_gateway_like'])));
+            $network['librenms']['open_alert_count'] = array_sum(array_column($devices, 'open_alerts'));
         }
         unset($network);
 

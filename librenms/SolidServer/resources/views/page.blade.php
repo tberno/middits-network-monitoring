@@ -195,6 +195,31 @@
         padding: 3px 7px;
     }
 
+    .solidserver-page .ss-link {
+        color: #74d5ea;
+        font-weight: 700;
+    }
+
+    .solidserver-page .ss-mini {
+        color: var(--ss-muted);
+        font-size: 11px;
+        line-height: 1.3;
+    }
+
+    .solidserver-page .ss-status {
+        border-radius: 2px;
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 3px 5px;
+        text-transform: uppercase;
+    }
+
+    .solidserver-page .ss-status.up { background: var(--ss-ok); color: #fff; }
+    .solidserver-page .ss-status.down { background: var(--ss-crit); color: #fff; }
+    .solidserver-page .ss-status.muted { background: #6c7782; color: #fff; }
+
     .solidserver-page .ss-detail-row {
         display: none;
     }
@@ -439,11 +464,16 @@
                         $librenms = $network['librenms'] ?? [];
                         $interfaceMatches = $librenms['interface_matches'] ?? [];
                         $vlanMatches = $librenms['vlan_matches'] ?? [];
+                        $deviceMatches = $librenms['device_matches'] ?? [];
+                        $deviceCount = $librenms['device_count'] ?? count($deviceMatches);
+                        $gatewayCount = $librenms['gateway_count'] ?? 0;
+                        $openAlertCount = $librenms['open_alert_count'] ?? 0;
                         $notes = $network['attention_notes'] ?? $network['notes'] ?? [];
                         $ranges = $network['ranges'] ?? [];
+                        $deviceText = implode(' ', array_map(fn ($device) => $device['hostname'] ?? '', $deviceMatches));
                     @endphp
 
-                    <tr class="ss-network-row {{ $state }}" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText) }}">
+                    <tr class="ss-network-row {{ $state }}" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText . ' ' . $deviceText) }}">
                         <td><span class="ss-badge {{ $stateClass }}">{{ $state }}</span></td>
                         <td>{{ $network['name'] ?? 'unknown' }}</td>
                         <td class="{{ $vlans ? '' : 'ss-muted' }}">{{ $vlanText }}</td>
@@ -468,7 +498,11 @@
                         <td>{{ number_format($network['range_count'] ?? count($ranges)) }}</td>
                         <td>
                             @if (count($interfaceMatches))
-                                <span class="ss-badge muted">{{ count($interfaceMatches) }} intf</span>
+                                <span class="ss-badge muted">{{ $deviceCount }} dev</span>
+                                <div class="ss-mini">{{ count($interfaceMatches) }} intf{{ $gatewayCount ? ' / ' . $gatewayCount . ' gw' : '' }}</div>
+                                @if ($openAlertCount)
+                                    <div class="ss-mini">{{ $openAlertCount }} open alert{{ $openAlertCount === 1 ? '' : 's' }}</div>
+                                @endif
                             @elseif (count($vlanMatches))
                                 <span class="ss-badge muted">{{ count($vlanMatches) }} vlan</span>
                             @else
@@ -488,13 +522,13 @@
                         </td>
                     </tr>
 
-                    <tr id="ss-detail-{{ $loop->index }}" class="ss-detail-row" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText) }}">
+                    <tr id="ss-detail-{{ $loop->index }}" class="ss-detail-row" data-state="{{ $state }}" data-search="{{ strtolower(($network['name'] ?? '') . ' ' . $vlanText . ' ' . $serverText . ' ' . $deviceText) }}">
                         <td colspan="12" class="ss-detail">
                             <details class="ss-disclosure">
                                 <summary>Details for {{ $network['name'] ?? 'unknown' }}</summary>
 
                                 @if (count($interfaceMatches))
-                                    <h4>LibreNMS interface matches</h4>
+                                    <h4>LibreNMS device and interface matches</h4>
                                     <table class="table table-condensed">
                                         <thead>
                                             <tr>
@@ -502,20 +536,75 @@
                                                 <th>Interface IP</th>
                                                 <th>Device</th>
                                                 <th>Port</th>
+                                                <th>Status</th>
+                                                <th>VLAN</th>
+                                                <th>Alerts</th>
                                                 <th>Description</th>
                                                 <th>Alias</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             @foreach ($interfaceMatches as $match)
+                                                @php
+                                                    $oper = strtolower((string) ($match['oper_status'] ?? ''));
+                                                    $admin = strtolower((string) ($match['admin_status'] ?? ''));
+                                                    $statusClass = $oper === 'up' ? 'up' : ($oper === 'down' ? 'down' : 'muted');
+                                                @endphp
                                                 <tr>
                                                     <td>{{ $match['cidr'] ?? '' }}</td>
                                                     <td>{{ $match['ip'] ?? $match['interface_ip'] ?? '' }}</td>
-                                                    <td>{{ $match['hostname'] ?? $match['device'] ?? '' }}</td>
-                                                    <td>{{ $match['ifName'] ?? $match['port'] ?? '' }}</td>
+                                                    <td>
+                                                        @if (!empty($match['device_url']))
+                                                            <a class="ss-link" href="{{ $match['device_url'] }}">{{ $match['hostname'] ?? $match['device'] ?? '' }}</a>
+                                                        @else
+                                                            {{ $match['hostname'] ?? $match['device'] ?? '' }}
+                                                        @endif
+                                                        @if (!empty($match['is_gateway_like']))
+                                                            <div class="ss-mini">gateway-like</div>
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        @if (!empty($match['port_url']))
+                                                            <a class="ss-link" href="{{ $match['port_url'] }}">{{ $match['ifName'] ?? $match['port'] ?? '' }}</a>
+                                                        @else
+                                                            {{ $match['ifName'] ?? $match['port'] ?? '' }}
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        <span class="ss-status {{ $statusClass }}">{{ $oper ?: 'unknown' }}</span>
+                                                        @if ($admin && $admin !== $oper)
+                                                            <div class="ss-mini">admin {{ $admin }}</div>
+                                                        @endif
+                                                    </td>
+                                                    <td>{{ $match['inferred_vlan'] ?? 'unknown' }}</td>
+                                                    <td>{{ number_format($match['open_alerts'] ?? 0) }}</td>
                                                     <td>{{ $match['ifDescr'] ?? $match['description'] ?? '' }}</td>
                                                     <td>{{ $match['ifAlias'] ?? $match['alias'] ?? '' }}</td>
                                                 </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                @endif
+
+                                @if (count($vlanMatches))
+                                    <h4>LibreNMS VLAN inventory</h4>
+                                    <table class="table table-condensed">
+                                        <thead>
+                                            <tr>
+                                                <th>VLAN</th>
+                                                <th>Name</th>
+                                                <th>Device</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach ($vlanMatches as $vlan => $matches)
+                                                @foreach ($matches as $match)
+                                                    <tr>
+                                                        <td>{{ $vlan }}</td>
+                                                        <td>{{ $match['name'] ?? '' }}</td>
+                                                        <td>{{ $match['hostname'] ?? '' }}</td>
+                                                    </tr>
+                                                @endforeach
                                             @endforeach
                                         </tbody>
                                     </table>

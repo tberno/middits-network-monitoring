@@ -41,8 +41,12 @@ Then enable it from the LibreNMS plugin admin page and configure:
   when a VLAN can be parsed from names such as `Vlan 113`.
 - Cross-references EIP scope CIDRs with LibreNMS interface IPv4 addresses to
   identify likely gateway/SVI/interface owners for each DHCP network.
-- Adds attention notes for correlation gaps and capacity warnings.
-- Provides a read-only DHCP/IP lookup panel for IP searches.
+- Adds LibreNMS device/port links, interface up/down status, gateway-like
+  detection, and open alert counts for matching network interfaces.
+- Shows LibreNMS VLAN inventory matches for detected or inferred VLAN IDs.
+- Adds attention notes for correlation gaps, inferred VLAN mismatches, missing
+  gateway-like interfaces, and capacity warnings.
+- Provides a read-only DHCP/IP/DNS lookup panel for IP and hostname searches.
 
 ## What this plugin does not do
 
