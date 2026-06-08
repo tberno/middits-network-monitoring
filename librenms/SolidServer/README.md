@@ -64,6 +64,60 @@ Then enable it from the LibreNMS plugin admin page and configure:
 ## Alerting note
 
 The plugin gives LibreNMS a local dashboard/control surface. For Slack alerting,
-keep using LibreNMS alert rules against pollable state. The current practical
-path is still `nms/check_solidserver.py` as a LibreNMS service check, or a later
-plugin-package version that writes first-class LibreNMS components/sensors.
+keep using LibreNMS alert rules against pollable state.
+
+The dashboard itself is not polled by LibreNMS, so alerting needs a pollable
+LibreNMS object. The preferred next step is to promote the dashboard findings
+into native LibreNMS state, such as components or sensors, so normal LibreNMS
+alert rules can send Slack notifications without a separate service-check
+script.
+
+This plugin includes a component sync helper under `bin/`. Keep helper scripts
+out of the plugin root because LibreNMS scans root-level plugin PHP files as web
+hooks.
+
+```bash
+php /opt/librenms/app/Plugins/SolidServer/bin/sync_components.php \
+  --device-id 839 \
+  --dry-run
+```
+
+Use `--dry-run` first to confirm the target device and counts. The script writes
+LibreNMS component rows with type `solidserver_dhcp`; it does not write to Solid
+Server. Each component is one EIP DHCP shared network.
+
+By default the sync uses the saved SolidServer plugin settings for base URL,
+username, password, TLS, and thresholds. Command-line options or environment
+variables can still override those values when needed.
+
+Once components exist, create normal LibreNMS alert rules:
+
+```text
+%macros.component_critical = "1" && %component.type = "solidserver_dhcp"
+```
+
+```text
+%macros.component_warning = "1" && %component.type = "solidserver_dhcp"
+```
+
+Schedule the sync from cron on the LibreNMS server as the `librenms` user so the
+component state refreshes before LibreNMS evaluates alert rules.
+
+The sync also writes `/var/lib/librenms/solidserver-components.json` by default.
+The Middlebury alert broker can read that file to add shared-network capacity
+details to Slack even when LibreNMS sends only the generic alert rule payload.
+
+Systemd unit examples are included under `systemd/`:
+
+```text
+solidserver-components.service
+solidserver-components.timer
+```
+
+Good alert candidates from this plugin are:
+
+- shared network free percent at or below critical threshold
+- shared network free percent at or below warning threshold
+- EIP CIDR has no matching LibreNMS interface IP
+- EIP VLAN has no matching LibreNMS VLAN inventory entry
+- LibreNMS interface match exists, but VLAN could not be detected

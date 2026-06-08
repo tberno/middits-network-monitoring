@@ -47,6 +47,7 @@ SLACK_WIFI_CHANNEL_ID = os.getenv("SLACK_WIFI_CHANNEL_ID") or SLACK_CHANNEL_ID
 
 # Slack message state file. This stores alert keys -> Slack channel/timestamp.
 STATE_FILE = os.getenv("STATEFILE") or "/var/lib/alert-broker/slack-state.json"
+SOLIDSERVER_COMPONENT_STATE = os.getenv("SOLIDSERVER_COMPONENT_STATE") or "/var/lib/librenms/solidserver-components.json"
 
 # -----------------------------------------------------------------------------
 # General helpers
@@ -173,6 +174,21 @@ def alert_state_key(alert: NormalizedAlert) -> str:
     rule = str(alert.rule or alert.summary or alert.event_type or "unknown-rule").strip().lower()
 
     if source == "nms":
+        scope = ""
+        metadata = alert.metadata or {}
+        if "solidserver_dhcp" in json.dumps(metadata, default=str).lower():
+            faults = metadata.get("faults") or []
+            if faults and isinstance(faults[0], dict):
+                scope = _fault_value(
+                    faults[0],
+                    "solidserver_key",
+                    "label",
+                    "component_label",
+                    "summary",
+                    "string",
+                ) or ""
+        if scope:
+            return "{}:device:{}:rule:{}:scope:{}".format(source, device, rule, scope.strip().lower())
         return "{}:device:{}:rule:{}".format(source, device, rule)
 
     if alert.alert_id:
@@ -540,6 +556,142 @@ def best_device_name(payload: dict) -> str:
 
     return payload.get("ip") or "unknown-device"
 
+def _fault_value(fault: dict, *keys):
+    for key in keys:
+        value = fault.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    return None
+
+def _format_nms_fault(fault: dict) -> str:
+    if not isinstance(fault, dict):
+        return str(fault)
+
+    if fault.get("string"):
+        return str(fault["string"]).strip()
+
+    label = _fault_value(fault, "label", "component_label", "name", "summary")
+    error = _fault_value(fault, "error", "component_error", "details")
+    parsed_error = _parse_key_value_text(error or "")
+
+    free_percent = _fault_value(fault, "free_percent", "component_free_percent") or parsed_error.get("free_percent")
+    used = _fault_value(fault, "used", "component_used") or parsed_error.get("used")
+    free = _fault_value(fault, "free", "component_free") or parsed_error.get("free")
+    total = _fault_value(fault, "total", "component_total") or parsed_error.get("total")
+    cidrs = _fault_value(fault, "cidrs", "component_cidrs") or parsed_error.get("cidrs")
+    vlans = _fault_value(fault, "vlans", "component_vlans") or parsed_error.get("vlans")
+    sources = _fault_value(fault, "dhcp_sources", "component_dhcp_sources") or parsed_error.get("dhcp_sources")
+    shared_network = parsed_error.get("shared_network") or parsed_error.get("solidserver_key")
+
+    if (not label or label == "unknown") and shared_network:
+        label = "SolidServer DHCP {}".format(shared_network)
+
+    lines = []
+    if label:
+        lines.append("Scope: {}".format(label))
+    if free_percent:
+        capacity = "{}% free".format(free_percent)
+        if used or free or total:
+            capacity += " (used={}, free={}, total={})".format(
+                used or "?",
+                free or "?",
+                total or "?",
+            )
+        lines.append("Capacity: {}".format(capacity))
+    if cidrs:
+        lines.append("CIDR: {}".format(cidrs))
+    if vlans:
+        lines.append("VLAN: {}".format(vlans))
+    if sources:
+        lines.append("DHCP source: {}".format(sources))
+    if error:
+        lines.append("Notes: {}".format(error))
+
+    if lines:
+        return "\n".join(lines)
+
+    return json.dumps(fault, sort_keys=True)
+
+def _parse_key_value_text(text: str) -> dict:
+    """
+    Parse simple component summary text:
+    shared_network=... free_percent=18.75 used=26 ...
+
+    Values in this sync payload do not contain spaces except the notes tail, so
+    a small parser is enough and avoids bringing in URL/query parsing semantics.
+    """
+    parsed = {}
+    for part in str(text or "").split():
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip(",;")
+        if key and value:
+            parsed[key] = value
+
+    return parsed
+
+def _load_solidserver_component_state() -> dict:
+    try:
+        with open(SOLIDSERVER_COMPONENT_STATE, "r") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+def _solidserver_state_details(limit: int = 8, capacity_only: bool = True) -> str:
+    state = _load_solidserver_component_state()
+    entries = state.get("solidserver_dhcp") or []
+    actionable = [
+        entry for entry in entries
+        if str(entry.get("state") or "").lower() in ("critical", "warning")
+    ]
+    if capacity_only:
+        actionable = [
+            entry for entry in actionable
+            if _solidserver_is_capacity_issue(entry)
+        ]
+
+    if not actionable:
+        return ""
+
+    lines = [
+        "Solid Server DHCP state from {}".format(state.get("generated_at", "last sync")),
+        "{} warning/critical capacity shared networks".format(len(actionable) if capacity_only else len(actionable)),
+    ]
+
+    for entry in actionable[:limit]:
+        lines.append(
+            "- {name}: {free_percent}% free (used={used}, free={free}, total={total}) CIDR={cidrs} VLAN={vlans} DHCP={dhcp}".format(
+                name=entry.get("name") or entry.get("label") or "unknown",
+                free_percent=entry.get("free_percent", "unknown"),
+                used=entry.get("used", "?"),
+                free=entry.get("free", "?"),
+                total=entry.get("total", "?"),
+                cidrs=",".join(entry.get("cidrs") or []) or "unknown",
+                vlans=",".join(entry.get("vlans") or []) or "unknown",
+                dhcp=",".join(entry.get("dhcp_sources") or []) or "unknown",
+            )
+        )
+
+    if len(actionable) > limit:
+        lines.append("- ... {} more".format(len(actionable) - limit))
+
+    return "\n".join(lines)
+
+def _solidserver_is_capacity_issue(entry: dict) -> bool:
+    try:
+        free_percent = float(entry.get("free_percent"))
+    except (TypeError, ValueError):
+        return False
+
+    if free_percent >= 100:
+        return False
+
+    text = "{} {}".format(entry.get("error") or "", entry.get("summary") or "").lower()
+    return "free capacity" in text or free_percent <= 20
+
 # -----------------------------------------------------------------------------
 # NMS / LibreNMS normalizer
 # -----------------------------------------------------------------------------
@@ -554,10 +706,18 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
     fault_lines = []
 
     for fault in faults:
-        if isinstance(fault, dict) and fault.get("string"):
-            fault_lines.append(fault["string"])
+        line = _format_nms_fault(fault)
+        if line:
+            fault_lines.append(line)
 
     details = "\n".join(fault_lines) if fault_lines else payload.get("details", "")
+    if (
+        "dhcp lease exhaustion" in str(summary).lower()
+        and ("solidserver" not in str(details).lower() or "capacity:" not in str(details).lower())
+    ):
+        solidserver_details = _solidserver_state_details(capacity_only=True)
+        if solidserver_details:
+            details = solidserver_details if not details else "{}\n\n{}".format(details, solidserver_details)
 
     return NormalizedAlert(
         source="nms",
@@ -627,6 +787,7 @@ def health():
 
 def process_webhook(source: str, payload: dict):
     alert, text = normalize_and_render_alert(source, payload)
+    app.logger.info("%s RENDERED TEXT: %s", source.upper(), text)
     channel_id = slack_channel_for_alert(source, payload, text)
     slack_result = send_or_update_slack(alert, text, channel_id)
 
@@ -657,6 +818,7 @@ def webhook_graylog():
 @app.post("/webhook/nms")
 def webhook_nms():
     payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
+    app.logger.info("NMS RAW PAYLOAD: %s", json.dumps(payload, default=str))
     return process_webhook("nms", payload)
 
 # -----------------------------------------------------------------------------
