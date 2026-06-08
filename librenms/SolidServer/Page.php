@@ -298,8 +298,12 @@ class Page extends PageHook
     private function enrichWithLibreNms(array $networks): array
     {
         $cidrBounds = [];
+        $nameTerms = [];
         $vlanIds = [];
         foreach ($networks as $networkKey => $network) {
+            foreach ($this->networkNameTerms($network['name'] ?? '') as $term) {
+                $nameTerms[$term] = true;
+            }
             foreach ($network['cidrs'] ?? [] as $cidr) {
                 $bounds = $this->cidrBounds($cidr);
                 if ($bounds !== null) {
@@ -313,7 +317,7 @@ class Page extends PageHook
             }
         }
 
-        if (!$vlanIds && !$cidrBounds) {
+        if (!$vlanIds && !$cidrBounds && !$nameTerms) {
             return $networks;
         }
 
@@ -358,6 +362,53 @@ class Page extends PageHook
                 unset($network);
             } catch (\Throwable $exception) {
                 $networks = $this->addLibreNmsError($networks, 'VLAN enrichment: ' . $exception->getMessage());
+            }
+        }
+
+        if ($nameTerms) {
+            try {
+                $query = DB::table('vlans')
+                    ->leftJoin('devices', 'devices.device_id', '=', 'vlans.device_id')
+                    ->select([
+                        'vlans.vlan_vlan',
+                        'vlans.vlan_name',
+                        'vlans.vlan_domain',
+                        'devices.device_id',
+                        'devices.hostname',
+                        'devices.sysName',
+                    ])
+                    ->where(function ($query) use ($nameTerms) {
+                        foreach (array_keys($nameTerms) as $term) {
+                            $query->orWhere('vlans.vlan_name', 'LIKE', '%' . $term . '%');
+                        }
+                    })
+                    ->orderBy('vlans.vlan_vlan')
+                    ->orderBy('devices.hostname')
+                    ->limit(2000)
+                    ->get();
+
+                foreach ($rows as $row) {
+                    $vlan = is_numeric($row->vlan_vlan) ? (string) ((int) $row->vlan_vlan) : (string) $row->vlan_vlan;
+                    $vlanName = (string) ($row->vlan_name ?: '');
+                    foreach ($networks as &$network) {
+                        if (!$this->vlanNameLooksRelated($network['name'] ?? '', $vlanName)) {
+                            continue;
+                        }
+
+                        if (is_numeric($vlan)) {
+                            $network['vlans'][$vlan] = true;
+                        }
+                        $network['librenms']['vlan_matches'][$vlan][] = [
+                            'device_id' => $row->device_id,
+                            'hostname' => $row->hostname ?: $row->sysName ?: 'unknown-device',
+                            'name' => $vlanName,
+                            'domain' => $row->vlan_domain ?: '',
+                        ];
+                    }
+                    unset($network);
+                }
+            } catch (\Throwable $exception) {
+                $networks = $this->addLibreNmsError($networks, 'VLAN name enrichment: ' . $exception->getMessage());
             }
         }
 
@@ -417,12 +468,23 @@ class Page extends PageHook
                                 'prefixlen' => $row->ipv4_prefixlen,
                                 'port_id' => $row->port_id,
                             ];
+
+                            $inferredVlan = $this->detectVlan([
+                                'dhcpsn_name' => $row->ifName,
+                                'dhcpscope_name' => $row->ifDescr,
+                                'dhcp_comment' => $row->ifAlias,
+                            ]);
+                            if ($inferredVlan !== null) {
+                                $networks[$networkKey]['vlans'][$inferredVlan] = true;
+                            }
                         }
                     }
                 }
 
                 foreach ($networks as &$network) {
                     $network['librenms']['interface_matches'] = array_values($network['librenms']['interface_matches']);
+                    $network['vlans'] = array_keys($network['vlans']);
+                    sort($network['vlans'], SORT_NATURAL);
                 }
                 unset($network);
             } catch (\Throwable $exception) {
@@ -431,6 +493,42 @@ class Page extends PageHook
         }
 
         return $networks;
+    }
+
+    private function networkNameTerms(string $name): array
+    {
+        $cleaned = strtolower(preg_replace('/[^a-z0-9]+/i', ' ', $name));
+        $parts = preg_split('/\s+/', trim($cleaned)) ?: [];
+        $terms = [];
+
+        foreach ($parts as $part) {
+            if (strlen($part) >= 4 && !is_numeric($part)) {
+                $terms[] = $part;
+            }
+        }
+
+        if (preg_match_all('/[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+/', $name, $matches)) {
+            foreach ($matches[0] as $part) {
+                $part = strtolower($part);
+                if (strlen($part) >= 4 && !is_numeric($part)) {
+                    $terms[] = $part;
+                }
+            }
+        }
+
+        return array_values(array_unique($terms));
+    }
+
+    private function vlanNameLooksRelated(string $networkName, string $vlanName): bool
+    {
+        $vlanName = strtolower($vlanName);
+        foreach ($this->networkNameTerms($networkName) as $term) {
+            if (str_contains($vlanName, $term)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function addLibreNmsError(array $networks, string $message): array

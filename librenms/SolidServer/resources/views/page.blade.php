@@ -256,7 +256,7 @@
                                 <span class="label label-primary">VLAN {{ $vlan }}</span>
                             @endforeach
                         @else
-                            <span class="text-muted">unknown</span>
+                            <span class="text-muted">not detected</span>
                         @endif
                     </td>
                     <td class="solidserver-capacity">
@@ -318,7 +318,7 @@
                         @elseif ($network['librenms']['interface_matches'])
                             <span class="label label-primary">{{ count($network['librenms']['interface_matches']) }} interface{{ count($network['librenms']['interface_matches']) === 1 ? '' : 's' }}</span>
                         @else
-                            <span class="text-muted">no match</span>
+                            <span class="text-muted">no LibreNMS match</span>
                         @endif
                     </td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
