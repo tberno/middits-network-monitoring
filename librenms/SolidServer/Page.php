@@ -428,6 +428,7 @@ class Page extends PageHook
         $type = $this->lookupType($query);
         $resolvedIps = $type === 'ip' ? [$query] : $this->resolveLookupIps($query);
         $rangeMatches = [];
+        $dnsLookup = $this->lookupDnsRecords($baseUrl, $username, $password, $verifyTls, $query, $resolvedIps);
 
         foreach ($resolvedIps as $ip) {
             foreach ($this->lookupContainingRanges($ranges, $ip) as $match) {
@@ -437,13 +438,117 @@ class Page extends PageHook
         }
 
         return [
-            'api_results' => [],
-            'errors' => [],
+            'api_results' => $dnsLookup['records'],
+            'dns_record_count' => $dnsLookup['dns_record_count'],
+            'errors' => $dnsLookup['errors'],
             'query' => $query,
             'range_matches' => $rangeMatches,
             'resolved_ips' => $resolvedIps,
             'type' => $type,
         ];
+    }
+
+    private function lookupDnsRecords(string $baseUrl, string $username, string $password, bool $verifyTls, string $query, array $resolvedIps): array
+    {
+        $records = [];
+        $errors = [];
+        $seen = [];
+        $lookupValues = array_values(array_unique(array_filter([
+            $query,
+            rtrim($query, '.'),
+            str_contains($query, '.') ? null : $query . '.middlebury.edu',
+            ...$resolvedIps,
+        ])));
+
+        if ($resolvedIps) {
+            $records[] = [
+                'label' => 'DNS resolver',
+                'row' => [
+                    'name' => $query,
+                    'addresses' => implode(', ', $resolvedIps),
+                ],
+                'summary' => $query . ' resolves to ' . implode(', ', $resolvedIps),
+            ];
+        }
+
+        $searches = [
+            '/rest/dns_rr_list' => ['dnsrr_full_name', 'dnsrr_name', 'dnsrr_value', 'rr_full_name', 'rr_name', 'rr_value'],
+            '/rest/dns_record_list' => ['dnsrr_full_name', 'dnsrr_name', 'dnsrr_value', 'record_name', 'record_value', 'fqdn', 'name', 'value'],
+            '/rest/dns_host_list' => ['hostaddr_name', 'hostaddr_full_name', 'hostaddr_ipaddr', 'name', 'fqdn', 'ip_addr'],
+        ];
+
+        $foundApiRecord = false;
+        $dnsRecordCount = 0;
+
+        foreach ($searches as $endpoint => $fields) {
+            foreach ($lookupValues as $value) {
+                foreach ($fields as $field) {
+                    try {
+                        $rows = $this->fetchRows($baseUrl, $endpoint, $username, $password, $verifyTls, $field . "='" . $this->escapeWhereValue($value) . "'", 25);
+                    } catch (\Throwable $exception) {
+                        $errors[$endpoint] = $endpoint . ' lookup did not return records.';
+                        continue;
+                    }
+
+                    foreach ($rows as $row) {
+                        $recordKey = $endpoint . ':' . md5(json_encode($row));
+                        if (isset($seen[$recordKey])) {
+                            continue;
+                        }
+                        $seen[$recordKey] = true;
+                        $records[] = [
+                            'endpoint' => $endpoint,
+                            'label' => $this->dnsRecordLabel($row, $endpoint),
+                            'row' => $this->summarizeRecordRow($row),
+                            'summary' => $this->dnsRecordSummary($row),
+                        ];
+                        $foundApiRecord = true;
+                        $dnsRecordCount++;
+                    }
+
+                    if ($foundApiRecord) {
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return [
+            'dns_record_count' => $dnsRecordCount,
+            'errors' => array_values($errors),
+            'records' => $records,
+        ];
+    }
+
+    private function escapeWhereValue(string $value): string
+    {
+        return str_replace("'", "''", $value);
+    }
+
+    private function dnsRecordLabel(array $row, string $endpoint): string
+    {
+        return $this->firstText($row, ['dnsrr_type', 'rr_type', 'record_type', 'type']) ?: basename($endpoint);
+    }
+
+    private function dnsRecordSummary(array $row): string
+    {
+        $name = $this->firstText($row, ['dnsrr_full_name', 'dnsrr_name', 'rr_full_name', 'rr_name', 'record_name', 'hostaddr_full_name', 'hostaddr_name', 'fqdn', 'name']);
+        $type = $this->firstText($row, ['dnsrr_type', 'rr_type', 'record_type', 'type']);
+        $value = $this->firstText($row, ['dnsrr_value', 'rr_value', 'record_value', 'hostaddr_ipaddr', 'ip_addr', 'value', 'data']);
+
+        return trim(implode(' ', array_filter([$name, $type ? '(' . $type . ')' : null, $value ? '-> ' . $value : null]))) ?: 'DNS record returned by Solid Server';
+    }
+
+    private function summarizeRecordRow(array $row): array
+    {
+        $summary = [];
+        foreach (['dnsrr_full_name', 'dnsrr_name', 'dnsrr_type', 'dnsrr_value', 'rr_full_name', 'rr_name', 'rr_type', 'rr_value', 'record_name', 'record_type', 'record_value', 'hostaddr_name', 'hostaddr_ipaddr', 'fqdn', 'name', 'type', 'value', 'data'] as $key) {
+            if (isset($row[$key]) && $row[$key] !== '') {
+                $summary[$key] = is_scalar($row[$key]) ? (string) $row[$key] : json_encode($row[$key]);
+            }
+        }
+
+        return $summary ?: array_slice($row, 0, 8, true);
     }
 
     private function resolveLookupIps(string $query): array
@@ -634,6 +739,17 @@ class Page extends PageHook
         foreach ($keys as $key) {
             if (isset($row[$key]) && is_numeric($row[$key])) {
                 return (float) $row[$key];
+            }
+        }
+
+        return null;
+    }
+
+    private function firstText(array $row, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (isset($row[$key]) && trim((string) $row[$key]) !== '') {
+                return trim((string) $row[$key]);
             }
         }
 

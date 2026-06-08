@@ -3,6 +3,7 @@
         --ss-bg: #23282e;
         --ss-panel: #2b3138;
         --ss-panel-soft: #303740;
+        --ss-panel-deep: #20262d;
         --ss-border: #1b2026;
         --ss-muted: #9aa7b4;
         --ss-text: #f2f5f7;
@@ -13,16 +14,28 @@
         color: var(--ss-text);
     }
 
+    .solidserver-page .ss-header {
+        align-items: flex-end;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        justify-content: space-between;
+        margin-bottom: 10px;
+    }
+
+    .solidserver-page .ss-header h3 {
+        margin: 0 0 4px;
+    }
+
     .solidserver-page .ss-meta {
         color: var(--ss-muted);
-        margin-bottom: 14px;
     }
 
     .solidserver-page .ss-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(120px, 180px));
         gap: 8px;
-        margin: 10px 0 12px;
+        margin: 0;
     }
 
     .solidserver-page .ss-stat {
@@ -56,6 +69,17 @@
         margin: 10px 0;
     }
 
+    .solidserver-page .ss-lookup {
+        align-items: center;
+        background: var(--ss-panel-deep);
+        border: 1px solid #37414b;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: auto minmax(220px, 420px) auto 1fr;
+        margin: 14px 0 12px;
+        padding: 10px 12px;
+    }
+
     .solidserver-page .ss-filter {
         max-width: 340px;
     }
@@ -75,14 +99,17 @@
 
     .solidserver-page .ss-table td {
         border-color: var(--ss-border);
+        padding: 7px 8px;
         vertical-align: middle;
     }
 
     .solidserver-page .ss-network-row.warning {
+        background: rgba(240, 161, 43, 0.12);
         box-shadow: inset 3px 0 0 var(--ss-warn);
     }
 
     .solidserver-page .ss-network-row.critical {
+        background: rgba(227, 93, 93, 0.12);
         box-shadow: inset 3px 0 0 var(--ss-crit);
     }
 
@@ -139,6 +166,33 @@
         background: #252b31;
         border-left: 4px solid #39434d;
         padding: 10px 12px 14px;
+    }
+
+    .solidserver-page .ss-result {
+        background: var(--ss-panel-deep);
+        border: 1px solid #37414b;
+        margin: 10px 0 12px;
+        padding: 12px;
+    }
+
+    .solidserver-page .ss-result h4 {
+        margin-top: 0;
+    }
+
+    .solidserver-page .ss-pill-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 8px 0;
+    }
+
+    .solidserver-page .ss-chip {
+        background: #3a434d;
+        border-radius: 3px;
+        color: #eef3f6;
+        display: inline-block;
+        font-size: 12px;
+        padding: 3px 7px;
     }
 
     .solidserver-page .ss-detail-row {
@@ -205,12 +259,14 @@
         .solidserver-page .ss-summary {
             grid-template-columns: repeat(2, minmax(140px, 1fr));
         }
+
+        .solidserver-page .ss-lookup {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 
 <div class="solidserver-page">
-    <h3>Solid Server DHCP shared networks</h3>
-
     @if ($error)
         <div class="alert alert-danger">{{ $error }}</div>
     @else
@@ -219,36 +275,41 @@
             $lookupQuery = $lookup_query ?? '';
         @endphp
 
-        <div class="ss-meta">
-            Source: {{ $base_url }}
-            @if (!empty($fetched_at))
-                <span>| fetched {{ $fetched_at }}</span>
-            @endif
-            @if (!empty($raw_range_count))
-                <span>| raw ranges {{ number_format($raw_range_count) }}</span>
-            @endif
+        <div class="ss-header">
+            <div>
+                <h3>Solid Server DHCP shared networks</h3>
+                <div class="ss-meta">
+                    Source: {{ $base_url }}
+                    @if (!empty($fetched_at))
+                        <span>| fetched {{ $fetched_at }}</span>
+                    @endif
+                    @if (!empty($raw_range_count))
+                        <span>| raw ranges {{ number_format($raw_range_count) }}</span>
+                    @endif
+                </div>
+            </div>
+
+            <div class="ss-summary">
+                <div class="ss-stat critical">
+                    <strong>{{ number_format($summary['critical'] ?? 0) }}</strong>
+                    <span>Critical</span>
+                </div>
+                <div class="ss-stat warning">
+                    <strong>{{ number_format($summary['warning'] ?? 0) }}</strong>
+                    <span>Warning</span>
+                </div>
+                <div class="ss-stat ok">
+                    <strong>{{ number_format($summary['ok'] ?? 0) }}</strong>
+                    <span>OK</span>
+                </div>
+                <div class="ss-stat total">
+                    <strong>{{ number_format($summary['total'] ?? count($shared_networks ?? [])) }}</strong>
+                    <span>Shared networks</span>
+                </div>
+            </div>
         </div>
 
-        <div class="ss-summary">
-            <div class="ss-stat critical">
-                <strong>{{ number_format($summary['critical'] ?? 0) }}</strong>
-                <span>Critical</span>
-            </div>
-            <div class="ss-stat warning">
-                <strong>{{ number_format($summary['warning'] ?? 0) }}</strong>
-                <span>Warning</span>
-            </div>
-            <div class="ss-stat ok">
-                <strong>{{ number_format($summary['ok'] ?? 0) }}</strong>
-                <span>OK</span>
-            </div>
-            <div class="ss-stat total">
-                <strong>{{ number_format($summary['total'] ?? count($shared_networks ?? [])) }}</strong>
-                <span>Shared networks</span>
-            </div>
-        </div>
-
-        <form class="ss-toolbar" method="GET">
+        <form class="ss-lookup" method="GET">
             <label class="sr-only" for="lookup">DHCP / IP lookup</label>
             <strong>DHCP / IP lookup</strong>
             <input class="form-control input-sm ss-filter" id="lookup" name="lookup" value="{{ $lookupQuery }}" placeholder="IP, MAC, hostname, or reservation">
@@ -257,16 +318,54 @@
         </form>
 
         @if (!empty($lookup))
-            <div class="ss-detail">
+            <div class="ss-result">
                 <h4>Lookup result: {{ $lookup['query'] ?? $lookupQuery }}</h4>
 
                 @if (!empty($lookup['resolved_ips']))
-                    <div class="ss-muted">Resolved IP{{ count($lookup['resolved_ips']) === 1 ? '' : 's' }}: {{ implode(', ', $lookup['resolved_ips']) }}</div>
+                    <div class="ss-muted">DNS resolved IP{{ count($lookup['resolved_ips']) === 1 ? '' : 's' }}</div>
+                    <div class="ss-pill-line">
+                        @foreach ($lookup['resolved_ips'] as $ip)
+                            <span class="ss-chip">{{ $ip }}</span>
+                        @endforeach
+                    </div>
                 @elseif (($lookup['type'] ?? '') === 'name')
                     <div class="ss-note warning">Hostname did not resolve to an IPv4 address from the LibreNMS server.</div>
                 @endif
 
+                @if (!empty($lookup['api_results']))
+                    <h4>EIP DNS records</h4>
+                    <table class="table table-condensed">
+                        <thead>
+                            <tr>
+                                <th style="width: 140px;">Source</th>
+                                <th>Record</th>
+                                <th>Fields</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($lookup['api_results'] as $result)
+                                <tr>
+                                    <td>{{ $result['label'] ?? $result['endpoint'] ?? 'Record' }}</td>
+                                    <td>{{ $result['summary'] ?? '' }}</td>
+                                    <td>
+                                        @foreach (($result['row'] ?? []) as $key => $value)
+                                            <span class="label label-default">{{ $key }}={{ $value }}</span>
+                                        @endforeach
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+
+                @if (($lookup['type'] ?? '') === 'name' && empty($lookup['dns_record_count']))
+                    <div class="ss-note">
+                        The hostname resolves in DNS, but the Solid Server DNS record endpoint did not return a matching row. DHCP matching below is based on the resolved IP.
+                    </div>
+                @endif
+
                 @if (!empty($lookup['range_matches']))
+                    <h4>DHCP range matches</h4>
                     <table class="table table-condensed">
                         <thead>
                             <tr>
@@ -296,28 +395,7 @@
                         </tbody>
                     </table>
                 @else
-                    <div class="ss-note warning">No DHCP range contains the lookup IP in the current Solid Server range data.</div>
-                @endif
-
-                @if (!empty($lookup['api_results']))
-                    <details class="ss-disclosure" open>
-                        <summary>{{ count($lookup['api_results']) }} API records</summary>
-                        <table class="table table-condensed">
-                            <tbody>
-                                @foreach ($lookup['api_results'] as $result)
-                                    <tr>
-                                        <th>{{ $result['label'] ?? $result['endpoint'] ?? 'Record' }}</th>
-                                        <td>{{ $result['summary'] ?? '' }}</td>
-                                        <td>
-                                            @foreach (($result['row'] ?? []) as $key => $value)
-                                                <span class="label label-default">{{ $key }}={{ $value }}</span>
-                                            @endforeach
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </details>
+                    <div class="ss-note">DNS/static result found, but no matching DHCP pool contains the resolved IP in the current range data.</div>
                 @endif
             </div>
         @endif
