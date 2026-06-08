@@ -20,21 +20,20 @@
 
     .solidserver-page .ss-summary {
         display: grid;
-        grid-template-columns: repeat(4, minmax(140px, 1fr));
-        gap: 12px;
-        margin: 12px 0 16px;
-        max-width: 760px;
+        grid-template-columns: repeat(4, minmax(120px, 180px));
+        gap: 8px;
+        margin: 10px 0 12px;
     }
 
     .solidserver-page .ss-stat {
-        border-left: 5px solid var(--ss-info);
+        border-left: 4px solid var(--ss-info);
         background: var(--ss-panel);
-        padding: 10px 12px;
+        padding: 8px 10px;
     }
 
     .solidserver-page .ss-stat strong {
         display: block;
-        font-size: 22px;
+        font-size: 20px;
         line-height: 1.1;
     }
 
@@ -54,7 +53,7 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin: 12px 0;
+        margin: 10px 0;
     }
 
     .solidserver-page .ss-filter {
@@ -80,11 +79,11 @@
     }
 
     .solidserver-page .ss-network-row.warning {
-        box-shadow: inset 4px 0 0 var(--ss-warn);
+        box-shadow: inset 3px 0 0 var(--ss-warn);
     }
 
     .solidserver-page .ss-network-row.critical {
-        box-shadow: inset 4px 0 0 var(--ss-crit);
+        box-shadow: inset 3px 0 0 var(--ss-crit);
     }
 
     .solidserver-page .ss-badge {
@@ -140,6 +139,18 @@
         background: #252b31;
         border-left: 4px solid #39434d;
         padding: 10px 12px 14px;
+    }
+
+    .solidserver-page .ss-detail-row {
+        display: none;
+    }
+
+    .solidserver-page .ss-detail-row.is-open {
+        display: table-row;
+    }
+
+    .solidserver-page .ss-detail-toggle {
+        min-width: 72px;
     }
 
     .solidserver-page details.ss-disclosure > summary {
@@ -249,10 +260,17 @@
             <div class="ss-detail">
                 <h4>Lookup result: {{ $lookup['query'] ?? $lookupQuery }}</h4>
 
+                @if (!empty($lookup['resolved_ips']))
+                    <div class="ss-muted">Resolved IP{{ count($lookup['resolved_ips']) === 1 ? '' : 's' }}: {{ implode(', ', $lookup['resolved_ips']) }}</div>
+                @elseif (($lookup['type'] ?? '') === 'name')
+                    <div class="ss-note warning">Hostname did not resolve to an IPv4 address from the LibreNMS server.</div>
+                @endif
+
                 @if (!empty($lookup['range_matches']))
                     <table class="table table-condensed">
                         <thead>
                             <tr>
+                                <th>Matched IP</th>
                                 <th>Shared network</th>
                                 <th>Range</th>
                                 <th>Scope</th>
@@ -265,6 +283,7 @@
                         <tbody>
                             @foreach ($lookup['range_matches'] as $match)
                                 <tr>
+                                    <td>{{ $match['matched_ip'] ?? '' }}</td>
                                     <td>{{ $match['shared_network'] ?? '' }}</td>
                                     <td>{{ $match['start'] ?? '' }} - {{ $match['end'] ?? '' }}</td>
                                     <td>{{ $match['scope'] ?? '' }}</td>
@@ -277,7 +296,7 @@
                         </tbody>
                     </table>
                 @else
-                    <div class="ss-note warning">No DHCP range contains this IP in the current Solid Server range data.</div>
+                    <div class="ss-note warning">No DHCP range contains the lookup IP in the current Solid Server range data.</div>
                 @endif
 
                 @if (!empty($lookup['api_results']))
@@ -387,7 +406,7 @@
                         </td>
                         <td>{{ $serverText ?: 'unknown' }}</td>
                         <td>
-                            <a href="#ss-detail-{{ $loop->index }}" class="btn btn-info btn-xs">{{ number_format(count($ranges) ?: ($network['range_count'] ?? 0)) }} ranges</a>
+                            <button class="btn btn-info btn-xs ss-detail-toggle" data-ss-detail="ss-detail-{{ $loop->index }}" type="button">{{ number_format(count($ranges) ?: ($network['range_count'] ?? 0)) }} ranges</button>
                         </td>
                     </tr>
 
@@ -502,6 +521,7 @@
         var filter = document.getElementById('solidserver-filter');
         var buttons = document.querySelectorAll('[data-ss-state]');
         var rows = document.querySelectorAll('#solidserver-networks tbody tr');
+        var toggles = document.querySelectorAll('[data-ss-detail]');
         var activeState = 'all';
 
         function applyFilter() {
@@ -510,7 +530,13 @@
             rows.forEach(function (row) {
                 var stateMatch = activeState === 'all' || row.getAttribute('data-state') === activeState;
                 var textMatch = !text || (row.getAttribute('data-search') || '').indexOf(text) !== -1;
-                row.style.display = stateMatch && textMatch ? '' : 'none';
+                var visible = stateMatch && textMatch;
+
+                if (row.classList.contains('ss-detail-row')) {
+                    row.style.display = visible && row.classList.contains('is-open') ? 'table-row' : 'none';
+                } else {
+                    row.style.display = visible ? '' : 'none';
+                }
             });
         }
 
@@ -521,6 +547,18 @@
         buttons.forEach(function (button) {
             button.addEventListener('click', function () {
                 activeState = button.getAttribute('data-ss-state') || 'all';
+                applyFilter();
+            });
+        });
+
+        toggles.forEach(function (button) {
+            button.addEventListener('click', function () {
+                var detail = document.getElementById(button.getAttribute('data-ss-detail'));
+                if (!detail) {
+                    return;
+                }
+
+                detail.classList.toggle('is-open');
                 applyFilter();
             });
         });

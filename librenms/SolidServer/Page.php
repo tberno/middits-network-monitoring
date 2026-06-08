@@ -426,14 +426,52 @@ class Page extends PageHook
     {
         $query = trim($query);
         $type = $this->lookupType($query);
+        $resolvedIps = $type === 'ip' ? [$query] : $this->resolveLookupIps($query);
+        $rangeMatches = [];
+
+        foreach ($resolvedIps as $ip) {
+            foreach ($this->lookupContainingRanges($ranges, $ip) as $match) {
+                $match['matched_ip'] = $ip;
+                $rangeMatches[] = $match;
+            }
+        }
 
         return [
             'api_results' => [],
             'errors' => [],
             'query' => $query,
-            'range_matches' => $type === 'ip' ? $this->lookupContainingRanges($ranges, $query) : [],
+            'range_matches' => $rangeMatches,
+            'resolved_ips' => $resolvedIps,
             'type' => $type,
         ];
+    }
+
+    private function resolveLookupIps(string $query): array
+    {
+        if ($this->lookupType($query) === 'mac') {
+            return [];
+        }
+
+        $names = [$query];
+        if (!str_contains($query, '.') && preg_match('/^[a-z0-9_-]+$/i', $query)) {
+            $names[] = $query . '.middlebury.edu';
+        }
+
+        $ips = [];
+        foreach (array_unique($names) as $name) {
+            $resolved = @gethostbynamel($name);
+            if (!is_array($resolved)) {
+                continue;
+            }
+
+            foreach ($resolved as $ip) {
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    $ips[$ip] = true;
+                }
+            }
+        }
+
+        return array_keys($ips);
     }
 
     private function lookupContainingRanges(array $ranges, string $ip): array
