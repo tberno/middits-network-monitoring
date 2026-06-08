@@ -309,10 +309,16 @@
                                 foreach ($network['librenms']['vlan_matches'] as $matches) {
                                     $device_count += count($matches);
                                 }
+                                $interface_count = count($network['librenms']['interface_matches']);
                             @endphp
                             <span class="label label-info">{{ $device_count }} VLAN device{{ $device_count === 1 ? '' : 's' }}</span>
+                            @if ($interface_count)
+                                <span class="label label-primary">{{ $interface_count }} interface{{ $interface_count === 1 ? '' : 's' }}</span>
+                            @endif
+                        @elseif ($network['librenms']['interface_matches'])
+                            <span class="label label-primary">{{ count($network['librenms']['interface_matches']) }} interface{{ count($network['librenms']['interface_matches']) === 1 ? '' : 's' }}</span>
                         @else
-                            <span class="text-muted">no VLAN match</span>
+                            <span class="text-muted">no match</span>
                         @endif
                     </td>
                     <td>{{ implode(', ', $network['servers']) }}</td>
@@ -356,6 +362,46 @@
                                                     </td>
                                                 </tr>
                                             @endforeach
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            @endif
+
+                            @if ($network['librenms']['interface_matches'])
+                                <h5>LibreNMS interface matches</h5>
+                                <table class="table table-condensed table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>EIP CIDR</th>
+                                            <th>Interface IP</th>
+                                            <th>Device</th>
+                                            <th>Port</th>
+                                            <th>Description</th>
+                                            <th>Alias</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($network['librenms']['interface_matches'] as $match)
+                                            <tr>
+                                                <td>{{ $match['cidr'] }}</td>
+                                                <td>{{ $match['ip'] }}/{{ $match['prefixlen'] }}</td>
+                                                <td>
+                                                    @if ($match['device_id'])
+                                                        <a href="{{ url('/device/device=' . $match['device_id']) }}">{{ $match['hostname'] }}</a>
+                                                    @else
+                                                        {{ $match['hostname'] }}
+                                                    @endif
+                                                </td>
+                                                <td>
+                                                    @if ($match['port_id'])
+                                                        <a href="{{ url('/port/' . $match['port_id']) }}">{{ $match['ifName'] ?: $match['ifDescr'] }}</a>
+                                                    @else
+                                                        {{ $match['ifName'] ?: $match['ifDescr'] }}
+                                                    @endif
+                                                </td>
+                                                <td>{{ $match['ifDescr'] }}</td>
+                                                <td>{{ $match['ifAlias'] }}</td>
+                                            </tr>
                                         @endforeach
                                     </tbody>
                                 </table>

@@ -151,10 +151,12 @@ class Page extends PageHook
                 $range['dhcprange_name'] ?? '',
             ]);
             $vlan = $this->detectVlan($range);
+            $cidr = $this->rangeCidr($range);
 
             if (!isset($networks[$key])) {
                 $networks[$key] = [
                     'critical' => $critical,
+                    'cidrs' => [],
                     'duplicate_range_count' => 0,
                     'free' => 0,
                     'free_percent' => null,
@@ -164,6 +166,7 @@ class Page extends PageHook
                     'ranges' => [],
                     'librenms' => [
                         'error' => null,
+                        'interface_matches' => [],
                         'vlan_matches' => [],
                     ],
                     'servers' => [],
@@ -183,6 +186,9 @@ class Page extends PageHook
             if ($vlan !== null) {
                 $networks[$key]['vlans'][$vlan] = true;
             }
+            if ($cidr !== null) {
+                $networks[$key]['cidrs'][$cidr] = true;
+            }
 
             if (isset($seenRanges[$rangeKey])) {
                 $networks[$key]['duplicate_range_count']++;
@@ -194,6 +200,9 @@ class Page extends PageHook
                     }
                     if ($vlan !== null) {
                         $networks[$key]['ranges'][$rangeIndex]['vlans'][$vlan] = true;
+                    }
+                    if ($cidr !== null) {
+                        $networks[$key]['ranges'][$rangeIndex]['cidr'] = $cidr;
                     }
                 }
                 continue;
@@ -225,6 +234,7 @@ class Page extends PageHook
             $rangeIndex = count($networks[$key]['ranges']);
             $rangeIndexes[$rangeKey] = $rangeIndex;
             $networks[$key]['ranges'][] = [
+                'cidr' => $cidr,
                 'duplicate_count' => 0,
                 'end' => $range['dhcprange_end_addr'] ?? '',
                 'failover' => $range['dhcprange_failover_name'] ?? '',
@@ -243,6 +253,7 @@ class Page extends PageHook
 
         foreach ($networks as &$network) {
             if ($network['total'] <= 0) {
+                $network['cidrs'] = array_keys($network['cidrs']);
                 $network['servers'] = array_keys($network['servers']);
                 $network['vlans'] = array_keys($network['vlans']);
                 foreach ($network['ranges'] as &$range) {
@@ -255,6 +266,8 @@ class Page extends PageHook
 
             $network['free_percent'] = ($network['free'] / $network['total']) * 100;
             $network['used_percent'] = ($network['used'] / $network['total']) * 100;
+            $network['cidrs'] = array_keys($network['cidrs']);
+            sort($network['cidrs'], SORT_NATURAL);
             $network['servers'] = array_keys($network['servers']);
             $network['vlans'] = array_keys($network['vlans']);
             sort($network['vlans'], SORT_NATURAL);
@@ -284,8 +297,15 @@ class Page extends PageHook
 
     private function enrichWithLibreNms(array $networks): array
     {
+        $cidrBounds = [];
         $vlanIds = [];
-        foreach ($networks as $network) {
+        foreach ($networks as $networkKey => $network) {
+            foreach ($network['cidrs'] ?? [] as $cidr) {
+                $bounds = $this->cidrBounds($cidr);
+                if ($bounds !== null) {
+                    $cidrBounds[$networkKey][$cidr] = $bounds;
+                }
+            }
             foreach ($network['vlans'] ?? [] as $vlan) {
                 if (is_numeric($vlan)) {
                     $vlanIds[(string) ((int) $vlan)] = true;
@@ -293,54 +313,133 @@ class Page extends PageHook
             }
         }
 
-        if (!$vlanIds) {
+        if (!$vlanIds && !$cidrBounds) {
             return $networks;
         }
 
-        try {
-            $rows = DB::table('vlans')
-                ->leftJoin('devices', 'devices.device_id', '=', 'vlans.device_id')
-                ->whereIn('vlans.vlan_vlan', array_keys($vlanIds))
-                ->select([
-                    'vlans.vlan_vlan',
-                    'vlans.vlan_name',
-                    'vlans.vlan_domain',
-                    'devices.device_id',
-                    'devices.hostname',
-                    'devices.sysName',
-                ])
-                ->orderBy('vlans.vlan_vlan')
-                ->orderBy('devices.hostname')
-                ->limit(2000)
-                ->get();
+        if ($vlanIds) {
+            try {
+                $rows = DB::table('vlans')
+                    ->leftJoin('devices', 'devices.device_id', '=', 'vlans.device_id')
+                    ->whereIn('vlans.vlan_vlan', array_keys($vlanIds))
+                    ->select([
+                        'vlans.vlan_vlan',
+                        'vlans.vlan_name',
+                        'vlans.vlan_domain',
+                        'devices.device_id',
+                        'devices.hostname',
+                        'devices.sysName',
+                    ])
+                    ->orderBy('vlans.vlan_vlan')
+                    ->orderBy('devices.hostname')
+                    ->limit(2000)
+                    ->get();
 
-            $matchesByVlan = [];
-            foreach ($rows as $row) {
-                $vlan = (string) ((int) $row->vlan_vlan);
-                $matchesByVlan[$vlan][] = [
-                    'device_id' => $row->device_id,
-                    'hostname' => $row->hostname ?: $row->sysName ?: 'unknown-device',
-                    'name' => $row->vlan_name ?: '',
-                    'domain' => $row->vlan_domain ?: '',
-                ];
-            }
+                $matchesByVlan = [];
+                foreach ($rows as $row) {
+                    $vlan = (string) ((int) $row->vlan_vlan);
+                    $matchesByVlan[$vlan][] = [
+                        'device_id' => $row->device_id,
+                        'hostname' => $row->hostname ?: $row->sysName ?: 'unknown-device',
+                        'name' => $row->vlan_name ?: '',
+                        'domain' => $row->vlan_domain ?: '',
+                    ];
+                }
 
-            foreach ($networks as &$network) {
-                $network['librenms']['vlan_matches'] = [];
-                foreach ($network['vlans'] ?? [] as $vlan) {
-                    $vlanKey = (string) ((int) $vlan);
-                    if (!empty($matchesByVlan[$vlanKey])) {
-                        $network['librenms']['vlan_matches'][$vlanKey] = $matchesByVlan[$vlanKey];
+                foreach ($networks as &$network) {
+                    $network['librenms']['vlan_matches'] = [];
+                    foreach ($network['vlans'] ?? [] as $vlan) {
+                        $vlanKey = (string) ((int) $vlan);
+                        if (!empty($matchesByVlan[$vlanKey])) {
+                            $network['librenms']['vlan_matches'][$vlanKey] = $matchesByVlan[$vlanKey];
+                        }
                     }
                 }
+                unset($network);
+            } catch (\Throwable $exception) {
+                $networks = $this->addLibreNmsError($networks, 'VLAN enrichment: ' . $exception->getMessage());
             }
-            unset($network);
-        } catch (\Throwable $exception) {
-            foreach ($networks as &$network) {
-                $network['librenms']['error'] = $exception->getMessage();
-            }
-            unset($network);
         }
+
+        if ($cidrBounds) {
+            try {
+                $query = DB::table('ipv4_addresses')
+                    ->leftJoin('ports', 'ports.port_id', '=', 'ipv4_addresses.port_id')
+                    ->leftJoin('devices', 'devices.device_id', '=', 'ports.device_id')
+                    ->select([
+                        'ipv4_addresses.ipv4_address',
+                        'ipv4_addresses.ipv4_prefixlen',
+                        'ports.port_id',
+                        'ports.ifName',
+                        'ports.ifDescr',
+                        'ports.ifAlias',
+                        'devices.device_id',
+                        'devices.hostname',
+                        'devices.sysName',
+                    ])
+                    ->where(function ($query) use ($cidrBounds) {
+                        foreach ($cidrBounds as $networkBounds) {
+                            foreach ($networkBounds as $bounds) {
+                                $query->orWhereRaw('INET_ATON(ipv4_addresses.ipv4_address) BETWEEN ? AND ?', [$bounds['start'], $bounds['end']]);
+                            }
+                        }
+                    })
+                    ->limit(2000);
+
+                $rows = $query->get();
+                foreach ($rows as $row) {
+                    $ipInt = $this->ipToUnsigned((string) $row->ipv4_address);
+                    if ($ipInt === null) {
+                        continue;
+                    }
+
+                    foreach ($cidrBounds as $networkKey => $networkBounds) {
+                        foreach ($networkBounds as $cidr => $bounds) {
+                            if ($ipInt < $bounds['start'] || $ipInt > $bounds['end']) {
+                                continue;
+                            }
+
+                            $matchKey = implode('|', [
+                                $cidr,
+                                $row->device_id,
+                                $row->port_id,
+                                $row->ipv4_address,
+                            ]);
+
+                            $networks[$networkKey]['librenms']['interface_matches'][$matchKey] = [
+                                'cidr' => $cidr,
+                                'device_id' => $row->device_id,
+                                'hostname' => $row->hostname ?: $row->sysName ?: 'unknown-device',
+                                'ifAlias' => $row->ifAlias ?: '',
+                                'ifDescr' => $row->ifDescr ?: '',
+                                'ifName' => $row->ifName ?: '',
+                                'ip' => $row->ipv4_address,
+                                'prefixlen' => $row->ipv4_prefixlen,
+                                'port_id' => $row->port_id,
+                            ];
+                        }
+                    }
+                }
+
+                foreach ($networks as &$network) {
+                    $network['librenms']['interface_matches'] = array_values($network['librenms']['interface_matches']);
+                }
+                unset($network);
+            } catch (\Throwable $exception) {
+                $networks = $this->addLibreNmsError($networks, 'Interface enrichment: ' . $exception->getMessage());
+            }
+        }
+
+        return $networks;
+    }
+
+    private function addLibreNmsError(array $networks, string $message): array
+    {
+        foreach ($networks as &$network) {
+            $existing = $network['librenms']['error'] ?? null;
+            $network['librenms']['error'] = $existing ? $existing . ' | ' . $message : $message;
+        }
+        unset($network);
 
         return $networks;
     }
@@ -367,6 +466,39 @@ class Page extends PageHook
         }
 
         return null;
+    }
+
+    private function rangeCidr(array $row): ?string
+    {
+        $netAddr = trim((string) ($row['dhcpscope_net_addr'] ?? ''));
+        $prefix = trim((string) ($row['dhcpscope_prefix'] ?? ''));
+
+        if ($netAddr === '' || $prefix === '' || !is_numeric($prefix)) {
+            return null;
+        }
+
+        return $netAddr . '/' . (int) $prefix;
+    }
+
+    private function cidrBounds(string $cidr): ?array
+    {
+        if (!preg_match('/^([0-9.]+)\/(\d{1,2})$/', $cidr, $match)) {
+            return null;
+        }
+
+        $base = $this->ipToUnsigned($match[1]);
+        $prefix = (int) $match[2];
+        if ($base === null || $prefix < 0 || $prefix > 32) {
+            return null;
+        }
+
+        $size = 2 ** (32 - $prefix);
+        $start = floor($base / $size) * $size;
+
+        return [
+            'end' => $start + $size - 1,
+            'start' => $start,
+        ];
     }
 
     private function lookupSolidServer(string $baseUrl, string $username, string $password, bool $verifyTls, array $ranges, string $query): array

@@ -41,6 +41,8 @@ Then enable it from the LibreNMS plugin admin page and configure:
   when a VLAN can be parsed from names such as `Vlan 113`.
 - Cross-references detected EIP VLANs with LibreNMS VLAN inventory and links
   matching LibreNMS devices in the shared-network drilldown.
+- Cross-references EIP scope CIDRs with LibreNMS interface IPv4 addresses to
+  identify likely gateway/SVI/interface owners for each DHCP network.
 - Provides a read-only DHCP/IP lookup panel for IP, MAC, hostname, or
   reservation-style searches. IP searches always map to the containing DHCP
   range from `/rest/dhcp_range_list` and then try read-only lease, reservation,
