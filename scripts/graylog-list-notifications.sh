@@ -5,13 +5,19 @@ echo
 echo "=== Graylog Notification Inspector ==="
 echo
 
-GL_BASE="${GL_BASE:-https://127.0.0.1}"
+GL_BASE="${GL_BASE:-https://raccoon.middlebury.edu/graylog}"
 
 echo "Using Graylog base URL: $GL_BASE"
 echo
 
-read -r -p "Graylog API token: " GL_TOKEN
-echo
+GL_TOKEN="${GRAYLOG_TOKEN:-${GL_TOKEN:-}}"
+
+if [ -z "$GL_TOKEN" ]; then
+    read -r -s -p "Graylog API token: " GL_TOKEN
+    echo
+else
+    echo "Using Graylog API token from environment."
+fi
 
 if [ -z "$GL_TOKEN" ]; then
     echo "ERROR: token cannot be empty"
@@ -30,7 +36,7 @@ else
     echo "ERROR: Could not reach Graylog API at $GL_BASE/api/system"
     echo
     echo "Try running with a different base URL, for example:"
-    echo "  GL_BASE=https://raccoon.middlebury.edu ./scripts/graylog-list-notifications.sh"
+    echo "  GL_BASE=https://raccoon.middlebury.edu/graylog ./scripts/graylog-list-notifications.sh"
     echo
     exit 1
 fi
