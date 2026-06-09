@@ -99,7 +99,7 @@ def build_alert_blocks(alert):
     if alert.resolved_at:
         time_fields.append({"type": "mrkdwn", "text": f"*Resolved*\n`{alert.resolved_at}`"})
     if alert.downtime:
-        time_fields.append({"type": "mrkdwn", "text": f"*Downtime*\n`{alert.downtime}`"})
+        time_fields.append({"type": "mrkdwn", "text": f"*Duration*\n`{alert.downtime}`"})
     if time_fields:
         blocks.append({"type": "section", "fields": time_fields})
 
@@ -148,7 +148,7 @@ def format_slack_alert(alert):
         rule_line=_line("Rule", _inline_code(alert.rule or alert.summary)),
         fired_line=_line("Fired", _inline_code(alert.fired_at)),
         resolved_line=_line("Resolved", _inline_code(alert.resolved_at)),
-        downtime_line=_line("Downtime", _inline_code(alert.downtime)),
+        downtime_line=_line("Duration", _inline_code(alert.downtime)),
         details_block=details_block,
         link_line=_line("Link", alert.link),
     )
