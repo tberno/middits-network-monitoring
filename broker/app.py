@@ -79,7 +79,7 @@ def slack_color_for_text(text: str) -> str:
     upper = text.upper()
 
     if "RESOLVED" in upper:
-        return "good"
+        return "#2EB67D"
 
     if "WARNING" in upper or "WARN" in upper:
         return "#ff9900"
