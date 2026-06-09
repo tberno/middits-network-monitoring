@@ -19,6 +19,7 @@ Main endpoints:
 from flask import Flask, jsonify, request
 import json
 import os
+import re
 import requests
 import tempfile
 
@@ -391,6 +392,113 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
 # Graylog normalizer
 # -----------------------------------------------------------------------------
 
+
+def graylog_backlog_message(payload: dict) -> dict:
+    """Return first useful Graylog backlog message object, if present."""
+    backlog = payload.get("backlog") or payload.get("backlog_messages") or []
+    if not isinstance(backlog, list):
+        return {}
+
+    for item in backlog:
+        if not isinstance(item, dict):
+            continue
+        msg = item.get("message", item)
+        if isinstance(msg, dict) and msg.get("message"):
+            return msg
+
+    return {}
+
+
+def parse_bgp_details(message: str) -> dict:
+    """Extract useful BGP peer transition fields from Junos-style syslog text."""
+    if not message:
+        return {}
+
+    result = {}
+
+    peer_match = re.search(
+        r"BGP peer (?P<peer>\d+\.\d+\.\d+\.\d+) "
+        r"\(External AS (?P<asn>\d+)\) changed state from "
+        r"(?P<from_state>\S+) to (?P<to_state>\S+) "
+        r"\(event (?P<event>[^)]+)\)",
+        message,
+    )
+
+    if peer_match:
+        result.update(peer_match.groupdict())
+        return result
+
+    notify_match = re.search(
+        r"NOTIFICATION (?:sent to|received from) "
+        r"(?P<peer>\d+\.\d+\.\d+\.\d+) "
+        r"\(External AS (?P<asn>\d+)\): .*?(?P<event>BFD Down|Hard Reset|Cease|Connection Collision Resolution)",
+        message,
+    )
+
+    if notify_match:
+        result.update(notify_match.groupdict())
+
+    return result
+
+
+def enrich_graylog_bgp(payload: dict, device: str, summary: str, details: str) -> tuple[str, str, str]:
+    """Improve Graylog routing/BGP alerts using event/backlog message content."""
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    backlog_msg = graylog_backlog_message(payload)
+
+    raw_message = (
+        event.get("message")
+        or backlog_msg.get("message")
+        or payload.get("message")
+        or payload.get("description")
+        or ""
+    )
+
+    raw_source = (
+        event.get("source")
+        or backlog_msg.get("source")
+        or payload.get("source")
+        or payload.get("source_name")
+        or device
+    )
+
+    if raw_source and device == "unknown-device":
+        device = str(raw_source)
+
+    bgp = parse_bgp_details(str(raw_message))
+
+    if bgp:
+        peer = bgp.get("peer")
+        asn = bgp.get("asn")
+        from_state = bgp.get("from_state")
+        to_state = bgp.get("to_state")
+        event_name = bgp.get("event")
+
+        summary = f"BGP peer {peer} {from_state or ''}->{to_state or ''}".strip()
+
+        detail_lines = [
+            f"Router: {device}",
+            f"Peer: {peer}",
+            f"Remote AS: {asn}",
+        ]
+
+        if from_state or to_state:
+            detail_lines.append(f"State: {from_state} -> {to_state}")
+
+        if event_name:
+            detail_lines.append(f"Event: {event_name}")
+
+        if raw_message:
+            detail_lines.append("")
+            detail_lines.append(str(raw_message))
+
+        details = "\n".join(detail_lines)
+
+    elif raw_message and not details:
+        details = str(raw_message)
+
+    return device, summary, details
+
 def normalize_graylog(payload: dict) -> NormalizedAlert:
     """
     Convert Graylog JSON into the common NormalizedAlert shape.
@@ -480,6 +588,8 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
     }
 
     severity = severity_map.get(str(severity).lower(), str(severity))
+
+    device, summary, details = enrich_graylog_bgp(payload, device, summary, details)
 
     return NormalizedAlert(
         source="graylog",
