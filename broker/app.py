@@ -441,7 +441,7 @@ def parse_bgp_details(message: str) -> dict:
     return result
 
 
-def enrich_graylog_bgp(payload: dict, device: str, summary: str, details: str) -> tuple[str, str, str]:
+def enrich_graylog_bgp(payload: dict, device: str, summary: str, details: str):
     """Improve Graylog routing/BGP alerts using event/backlog message content."""
     event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
     backlog_msg = graylog_backlog_message(payload)
