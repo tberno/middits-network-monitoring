@@ -559,6 +559,17 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
 
     details = "\n".join(fault_lines) if fault_lines else payload.get("details", "")
 
+    fired_at = payload.get("firedat")
+    resolved_at = payload.get("resolvedat")
+
+    # LibreNMS/NMS often sends only "timestamp" on both alert and recovery.
+    # For alert state, timestamp means Fired.
+    # For resolved state, timestamp means Resolved.
+    if state == "alert":
+        fired_at = fired_at or payload.get("timestamp")
+    else:
+        resolved_at = resolved_at or payload.get("timestamp")
+
     return NormalizedAlert(
         source="nms",
         event_type=payload.get("eventtype", "nms-event"),
@@ -570,8 +581,8 @@ def normalize_nms(payload: dict) -> NormalizedAlert:
         ip=payload.get("ip"),
         alert_id=payload.get("alertid") or payload.get("id"),
         rule=payload.get("rule"),
-        fired_at=payload.get("timestamp") or payload.get("firedat"),
-        resolved_at=payload.get("resolvedat"),
+        fired_at=fired_at,
+        resolved_at=resolved_at,
         downtime=payload.get("elapsed") or payload.get("downtime"),
         link=payload.get("link") or payload.get("url"),
         metadata=payload,
