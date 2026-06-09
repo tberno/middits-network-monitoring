@@ -589,20 +589,81 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
 
     severity = severity_map.get(str(severity).lower(), str(severity))
 
+    event_fields = payload.get("event_fields") if isinstance(payload.get("event_fields"), dict) else {}
+    fields = payload.get("fields") if isinstance(payload.get("fields"), dict) else {}
+
+    graylog_state = _first_nonempty(
+        payload.get("state"),
+        payload.get("event_status"),
+        event_fields.get("event_status"),
+        event_fields.get("state"),
+        fields.get("event_status"),
+        fields.get("state"),
+    ) or "alert"
+
+    if str(graylog_state).lower() in ("resolved", "resolve", "closed", "ok"):
+        state = "resolved"
+    else:
+        state = "alert"
+
+    fired_at = _first_nonempty(
+        payload.get("firedat"),
+        payload.get("fired_at"),
+        payload.get("event_fired_at"),
+        event_fields.get("firedat"),
+        event_fields.get("fired_at"),
+        event_fields.get("event_fired_at"),
+        fields.get("firedat"),
+        fields.get("fired_at"),
+        fields.get("event_fired_at"),
+    )
+
+    resolved_at = _first_nonempty(
+        payload.get("resolvedat"),
+        payload.get("resolved_at"),
+        payload.get("event_resolved_at"),
+        event_fields.get("resolvedat"),
+        event_fields.get("resolved_at"),
+        event_fields.get("event_resolved_at"),
+        fields.get("resolvedat"),
+        fields.get("resolved_at"),
+        fields.get("event_resolved_at"),
+    )
+
+    event_timestamp = payload.get("timestamp") or payload.get("event_timestamp")
+
+    if state == "resolved":
+        resolved_at = resolved_at or event_timestamp
+    else:
+        fired_at = fired_at or event_timestamp
+
+    duration = _first_nonempty(
+        payload.get("duration"),
+        payload.get("elapsed"),
+        event_fields.get("duration"),
+        event_fields.get("elapsed"),
+        fields.get("duration"),
+        fields.get("elapsed"),
+    )
+
+    if duration:
+        payload["duration"] = duration
+        payload["elapsed"] = duration
+
     device, summary, details = enrich_graylog_bgp(payload, device, summary, details)
 
     return NormalizedAlert(
         source="graylog",
         event_type=payload.get("eventtype") or payload.get("event_type") or payload.get("alert_type") or "graylog-event",
-        state=payload.get("state", "alert"),
+        state=state,
         severity=severity,
         device=device,
         summary=summary,
         details=details,
         ip=payload.get("dhcp_subnet"),
         alert_id=payload.get("alertid") or payload.get("id") or payload.get("event_id"),
-        fired_at=payload.get("firedat") or payload.get("timestamp") or payload.get("event_timestamp"),
-        resolved_at=payload.get("resolvedat"),
+        fired_at=fired_at,
+        resolved_at=resolved_at,
         link=payload.get("link") or payload.get("url"),
         metadata=payload,
     )
