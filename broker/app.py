@@ -649,6 +649,7 @@ def normalize_graylog(payload: dict) -> NormalizedAlert:
     if duration:
         payload["duration"] = duration
         payload["elapsed"] = duration
+        payload["downtime"] = duration
 
     device, summary, details = enrich_graylog_bgp(payload, device, summary, details)
 
