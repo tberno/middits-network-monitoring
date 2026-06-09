@@ -44,6 +44,7 @@ SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 # Specific destinations. If a specific variable is missing, fall back to default.
 SLACK_NMS_CHANNEL_ID = os.getenv("SLACK_NMS_CHANNEL_ID") or SLACK_CHANNEL_ID
 SLACK_WIFI_CHANNEL_ID = os.getenv("SLACK_WIFI_CHANNEL_ID") or SLACK_CHANNEL_ID
+SLACK_DNS_CHANNEL_ID = os.getenv("DNS_SLACK_CHANNEL") or os.getenv("SLACK_DNS_CHANNEL_ID") or SLACK_CHANNEL_ID
 
 # Slack message state file. This stores alert keys -> Slack channel/timestamp.
 STATE_FILE = os.getenv("STATEFILE") or "/var/lib/alert-broker/slack-state.json"
@@ -685,3 +686,57 @@ def webhook_mist():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5051, debug=False)
+
+@app.route("/webhook/dns", methods=["POST"])
+def webhook_dns():
+    payload = request.get_json(silent=True) or request.form.to_dict(flat=True)
+
+    title = payload.get("title") or payload.get("summary") or "DNS update"
+    source = payload.get("source") or "SOLIDserver / Graylog"
+    severity = (payload.get("severity") or "info").upper()
+    details = payload.get("details") or payload.get("message") or ""
+    link = payload.get("url") or payload.get("link") or ""
+
+    text = f":large_blue_circle:  DNS UPDATE - {title}"
+
+    fields = [
+        {"type": "mrkdwn", "text": f"*Source:*\n`{source}`"},
+        {"type": "mrkdwn", "text": f"*Severity:*\n`{severity}`"},
+    ]
+
+    blocks = [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": text},
+        },
+        {
+            "type": "section",
+            "fields": fields,
+        },
+    ]
+
+    if details:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Details:*\n```{details}```"},
+        })
+
+    if link:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Link:* {link}"},
+        })
+
+    result = slack_api_post("chat.postMessage", {
+        "channel": SLACK_DNS_CHANNEL_ID,
+        "text": text,
+        "blocks": blocks,
+    })
+
+    return jsonify({
+        "ok": bool(result.get("ok")),
+        "source": "dns",
+        "channel": SLACK_DNS_CHANNEL_ID,
+        "slack_response": result,
+    })
+
