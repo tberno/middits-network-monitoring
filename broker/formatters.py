@@ -74,32 +74,27 @@ def build_alert_blocks(alert):
         ],
     })
 
-    # IP + Source
+    # IP + Rule
     meta_fields = []
     if alert.ip:
         meta_fields.append({"type": "mrkdwn", "text": f"*IP*\n`{alert.ip}`"})
-    meta_fields.append({
-        "type": "mrkdwn",
-        "text": f"*Source*\n{SOURCE_LABEL.get((alert.source or '').lower(), alert.source or 'unknown')}",
-    })
-    blocks.append({"type": "section", "fields": meta_fields})
 
-    # Rule
     rule_val = _display(alert.rule or alert.summary)
     if rule_val:
-        blocks.append({
-            "type": "section",
-            "fields": [{"type": "mrkdwn", "text": f"*Rule*\n`{rule_val}`"}],
-        })
+        meta_fields.append({"type": "mrkdwn", "text": f"*Rule*\n`{rule_val}`"})
 
-    # Fired / Resolved / Downtime
+    if meta_fields:
+        blocks.append({"type": "section", "fields": meta_fields})
+
+    # Fired / Resolved / Duration
     time_fields = []
     if alert.fired_at:
         time_fields.append({"type": "mrkdwn", "text": f"*Fired*\n`{alert.fired_at}`"})
     if alert.resolved_at:
         time_fields.append({"type": "mrkdwn", "text": f"*Resolved*\n`{alert.resolved_at}`"})
     if alert.downtime:
-        time_fields.append({"type": "mrkdwn", "text": f"*Downtime*\n`{alert.downtime}`"})
+        time_fields.append({"type": "mrkdwn", "text": f"*Duration*\n`{alert.downtime}`"})
+
     if time_fields:
         blocks.append({"type": "section", "fields": time_fields})
 
@@ -148,7 +143,7 @@ def format_slack_alert(alert):
         rule_line=_line("Rule", _inline_code(alert.rule or alert.summary)),
         fired_line=_line("Fired", _inline_code(alert.fired_at)),
         resolved_line=_line("Resolved", _inline_code(alert.resolved_at)),
-        downtime_line=_line("Downtime", _inline_code(alert.downtime)),
+        downtime_line=_line("Duration", _inline_code(alert.downtime)),
         details_block=details_block,
         link_line=_line("Link", alert.link),
     )
