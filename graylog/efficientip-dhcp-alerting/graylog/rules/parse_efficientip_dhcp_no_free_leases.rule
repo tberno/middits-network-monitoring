@@ -1,0 +1,26 @@
+rule "parse_efficientip_dhcp_no_free_leases"
+when
+  has_field("message") &&
+  contains(to_string($message.message), "no free leases")
+then
+  let parsed = grok(
+    pattern: "dhcpd\\[%{INT:dhcp_pid}\\]: %{WORD:dhcp_action} from %{NOTSPACE:dhcp_client_mac} via %{DATA:dhcp_interface}: network %{DATA:dhcp_network}: %{GREEDYDATA:dhcp_status}",
+    value: to_string($message.message),
+    only_named_captures: true
+  );
+
+  set_fields(parsed);
+
+  set_field("alert_type", "dhcp_lease_exhaustion");
+  set_field("alert_service", "DHCP");
+  set_field("dhcp_server_ip", to_string($message.gl2_remote_ip));
+
+  let network = to_string(parsed["dhcp_network"]);
+  let iface = to_string(parsed["dhcp_interface"]);
+  let mac = to_string(parsed["dhcp_client_mac"]);
+  let pid = to_string(parsed["dhcp_pid"]);
+
+  set_field("alert_summary", concat("DHCP lease exhaustion on ", network));
+  set_field("dhcp_process", concat(concat("dhcpd[", pid), "]"));
+  set_field("dhcp_normalized_message", concat(concat(concat(concat(concat("DHCP no free leases on network ", network), " via "), iface), " for client "), mac));
+end
