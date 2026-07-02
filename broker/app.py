@@ -974,9 +974,22 @@ def webhook_dns():
     ]
 
     if details:
+        details = str(details)
+        max_details_len = 2700
+        truncated = False
+
+        if len(details) > max_details_len:
+            details = details[:max_details_len].rstrip()
+            truncated = True
+
+        details_text = f"*Details:*\n```{details}```"
+
+        if truncated:
+            details_text += "\n_Additional DNS changes were truncated to stay under Slack block limits._"
+
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Details:*\n```{details}```"},
+            "text": {"type": "mrkdwn", "text": details_text},
         })
 
     if link:
