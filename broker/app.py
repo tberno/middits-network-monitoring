@@ -46,6 +46,7 @@ SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID")
 SLACK_NMS_CHANNEL_ID = os.getenv("SLACK_NMS_CHANNEL_ID") or SLACK_CHANNEL_ID
 SLACK_WIFI_CHANNEL_ID = os.getenv("SLACK_WIFI_CHANNEL_ID") or SLACK_CHANNEL_ID
 SLACK_DNS_CHANNEL_ID = os.getenv("DNS_SLACK_CHANNEL") or os.getenv("SLACK_DNS_CHANNEL_ID") or SLACK_CHANNEL_ID
+SLACK_NETOPS_CHANNEL_ID = os.getenv("SLACK_NETOPS_CHANNEL_ID") or SLACK_NMS_CHANNEL_ID or SLACK_CHANNEL_ID
 
 # Slack message state file. This stores alert keys -> Slack channel/timestamp.
 STATE_FILE = os.getenv("STATEFILE") or "/var/lib/alert-broker/slack-state.json"
@@ -384,6 +385,9 @@ def slack_channel_for_alert(source: str, payload: dict, text: str) -> str:
 
         # Default Mist to WiFi unless it clearly matches switch/network terms.
         return SLACK_WIFI_CHANNEL_ID
+
+    if source_key == "netops":
+        return SLACK_NETOPS_CHANNEL_ID
 
     # Unknown sources go to the default channel.
     return SLACK_CHANNEL_ID
@@ -781,6 +785,40 @@ def normalize_mist(payload: dict) -> NormalizedAlert:
         metadata=payload,
     )
 
+
+# -----------------------------------------------------------------------------
+# NetOps synthetic check normalizer
+# -----------------------------------------------------------------------------
+def normalize_netops(payload: dict) -> NormalizedAlert:
+    state_value = str(payload.get("state") or "alert").lower()
+
+    if state_value in ("ok", "resolved", "resolve", "recovered", "recovery"):
+        state = "resolved"
+    else:
+        state = "alert"
+
+    severity = payload.get("severity")
+    if not severity:
+        severity = "ok" if state == "resolved" else "warning"
+
+    return NormalizedAlert(
+        source="netops",
+        event_type=payload.get("eventtype") or payload.get("event_type") or "netops-synthetic",
+        state=state,
+        severity=str(severity).lower(),
+        device=payload.get("device") or payload.get("host") or payload.get("target") or "netops-v4",
+        summary=payload.get("summary") or payload.get("title") or payload.get("rule") or "NetOps synthetic alert",
+        details=payload.get("details") or payload.get("message") or "",
+        ip=payload.get("ip") or payload.get("resolved_ip"),
+        alert_id=payload.get("alertid") or payload.get("alert_id") or payload.get("id"),
+        rule=payload.get("rule") or payload.get("summary"),
+        fired_at=payload.get("firedat") or payload.get("fired_at") or payload.get("timestamp"),
+        resolved_at=payload.get("resolvedat") or payload.get("resolved_at"),
+        downtime=payload.get("elapsed") or payload.get("downtime") or payload.get("duration"),
+        link=payload.get("link") or payload.get("url"),
+        metadata=payload,
+    )
+
 # -----------------------------------------------------------------------------
 # Alert normalizer/renderer
 # -----------------------------------------------------------------------------
@@ -790,6 +828,7 @@ def normalize_and_render_alert(source: str, payload: dict):
         "graylog": normalize_graylog,
         "nms": normalize_nms,
         "mist": normalize_mist,
+        "netops": normalize_netops,
     }
 
     alert = normalizers[source](payload)
@@ -851,6 +890,53 @@ def webhook_nms():
 def webhook_mist():
     payload = request.get_json(silent=True) or {}
     return process_webhook("mist", payload)
+
+
+# -----------------------------------------------------------------------------
+# NetOps synthetic checks webhook
+# -----------------------------------------------------------------------------
+@app.post("/webhook/netops")
+def webhook_netops():
+    payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
+
+    alert, text = normalize_and_render_alert("netops", payload)
+    channel_id = slack_channel_for_alert("netops", payload, text)
+
+    key = alert_state_key(alert)
+    state = load_state()
+
+    # NetOps may run every minute. Do not repost an already-open alert.
+    if not is_resolved_alert(alert) and state.get(key):
+        return jsonify({
+            "ok": True,
+            "source": "netops",
+            "slack_action": "deduped_open_alert",
+            "state_key": key,
+            "text": text,
+        }), 200
+
+    # If NetOps sends healthy/recovery every minute and there is no open alert,
+    # ignore it instead of posting a green message.
+    if is_resolved_alert(alert) and not state.get(key):
+        return jsonify({
+            "ok": True,
+            "source": "netops",
+            "slack_action": "ignored_recovery_without_open_alert",
+            "state_key": key,
+            "text": text,
+        }), 200
+
+    slack_result = send_or_update_slack(alert, text, channel_id)
+
+    return jsonify({
+        "ok": True,
+        "source": "netops",
+        "channel": slack_result.get("channel") or channel_id,
+        "slack_action": slack_result.get("action"),
+        "state_key": slack_result.get("state_key"),
+        "ts": slack_result.get("ts"),
+        "text": text,
+    }), 200
 
 # -----------------------------------------------------------------------------
 # Local development entry point
