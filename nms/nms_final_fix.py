@@ -14,7 +14,7 @@ headers = {"Content-Type": "application/json", "X-Requested-By": "python-nms-fin
 nms_template = (
     "🔴 *${event.title}*\n"
     "*Device:* ${foreach backlog item}${item.source}${end}\n"
-    "*Fired:* ${event.timestamp}\n"
+    "*Fired:* ${event.timerange_start}\n"
     "*Link:* ${event_uri}\n\n"
     "*Logs:*\n"
     "${foreach backlog item}${item.message}${end}"

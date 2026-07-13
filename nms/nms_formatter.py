@@ -19,7 +19,7 @@ nms_template = """
 ${if event.is_resolved}🟢 RESOLVED${else}🔴 TRIGGERED${end}
 *Device:* ${foreach backlog item}${item.source}${end}
 *Severity:* ${if event.priority == 3}CRITICAL${else if event.priority == 2}HIGH${else}WARNING${end}
-*Fired:* ${event.timestamp}
+*Fired:* ${event.timerange_start}
 ${if event.is_resolved}*Resolved:* ${event.timestamp}${end}
 *Unique-ID:* ${event.id}
 *Rule:* ${event.title}

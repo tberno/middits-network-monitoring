@@ -14,7 +14,7 @@ headers = {"Content-Type": "application/json", "X-Requested-By": "python-nms-mir
 nms_template = (
     "${if event.is_resolved}🟢 *RESOLVED*${else}🔴 *TRIGGERED*${end}\n"
     "*Device:* ${foreach backlog item}${item.source}${end}\n"
-    "*Fired:* ${event.timestamp}\n"
+    "*Fired:* ${event.timerange_start}\n"
     "${if event.is_resolved}*Resolved:* ${event.timestamp}${end}\n"
     "*Rule:* ${event_definition_title}\n"
     "*Link:* ${event_uri}\n\n"
