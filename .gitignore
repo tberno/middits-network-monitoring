@@ -1,9 +1,32 @@
-venv/
-.env
+# Python bytecode / caches
 __pycache__/
 *.pyc
 *.pyo
+
+# Local Python environments
+venv/
+.venv/
+
+# Local environment / secrets
+.env
+*.env
+*.key
+*.pem
+
+# Local backups / patch artifacts
+*.before-*
+*.bak
+*.bak.*
+*.orig
+*.rej
+*.tmp
+codex_handoff/
+safe-backups/
+
+# Runtime logs / archives
 *.log
 *.tar.gz
-*.bak
-.venv/
+*.zip
+
+# Repo-local temp directory
+/tmp/
